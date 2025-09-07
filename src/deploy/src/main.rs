@@ -63,7 +63,7 @@ fn main() {
             "-L",
             "-o",
             run_node_path,
-            "https://github.com/augusthindenes/inf3200/releases/latest/download/run-node.sh",
+            "https://github.com/augusthindenes/inf3200/releases/download/v0.1.0/run-node.sh",
         ])
         .status()
         .expect("failed to download run-node.sh");
@@ -128,13 +128,13 @@ fn main() {
             .expect("failed to execute ssh command");
 
         if status.success() {
-            servers.push(format!("{:}:{}", node, port));
+            servers.push(format!("{}:{}", node, port));
         } else {
             eprintln!("Failed to start server on {}:{}", node, port);
         }
     }
 
     // Output the list of servers in JSON format
-    println!("{}", json!(servers).to_string());
+    println!("'{}'", json!(servers).to_string());
 
 }
