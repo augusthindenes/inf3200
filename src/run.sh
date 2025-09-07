@@ -44,7 +44,7 @@ tar -xzf "$TARBALL" -C "$WORKDIR"
 BINPATH="$WORKDIR/$BIN"
 chmod +x "$BINPATH"
 
-nohup "$BINPATH" "$NODES" &> /dev/null &
+exec "$BINPATH" "$NODES"
 
-echo "Exiting node ${NODES}"
+echo "Servers started, exiting master script"
 exit 0
