@@ -74,7 +74,7 @@ jobs:
             fi
 
             for name in "${bins[@]}"; do
-              tarball="dist/${name}-${TAG}-${TARGET}.tar.gz"
+              tarball="dist/${name}-${TARGET}.tar.gz"
               tar -C "$bindir" -czf "$tarball" "$name"
               echo "Packaged $tarball"
             done
