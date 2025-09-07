@@ -30,8 +30,8 @@ trap cleanup EXIT
 
 
 # --- download tarball ---
-echo "Downloading: $GITHUB_TARBALL_URL"
-curl -fsSL "$GITHUB_TARBALL_URL" -o "$TARBALL"
+echo "Downloading Deploy Tarball from GitHub"
+curl -fsS --no-progress-meter -L "$GITHUB_TARBALL_URL" -o "$TARBALL"
 [[ -s "$TARBALL" ]] || { echo "Error: Download failed or empty file." >&2; exit 3; }
 
 # --- ensure binary exists ---
