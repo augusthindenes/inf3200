@@ -29,6 +29,5 @@ The deploy script gets a list of available nodes from the cluster, and start x n
    ```
 6. Stop all servers and exit the cluster:
    ```bash
-   ./share/ifi/cleanup.sh
-   exit
+   /share/ifi/cleanup.sh
    ```
