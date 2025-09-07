@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/download/latest/webserver-v0.0.8-x86_64-unknown-linux-gnu.tar.gz}
+GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/latest/download/webserver-v0.0.8-x86_64-unknown-linux-gnu.tar.gz}
 
 usage() {
     echo "Usage: $0 <port>"
