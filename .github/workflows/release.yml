@@ -33,8 +33,8 @@ jobs:
         with:
           # Different workspace paths for the two projects
           workspaces: |
-            src/webserver -> target/webserver
-            src/deploy -> target/deploy
+            ${{ env.WEBSERVER_PATH }}
+            ${{ env.DEPLOY_PATH }}
 
       - name: Build webserver
         run: |
@@ -42,15 +42,13 @@ jobs:
             --manifest-path ${{ env.WEBSERVER_PATH }}/Cargo.toml \
             --release \
             --target ${{ env.TARGET }}
-            --target-dir "target/webserver"
 
       - name: Build deploy
         run: |
           cargo build \
             --manifest-path ${{ env.DEPLOY_PATH }}/Cargo.toml \
             --release \
-            --target ${{ env.TARGET }} \
-            --target-dir "target/deploy"
+            --target ${{ env.TARGET }}
 
       - name: Package binaries
         shell: bash
@@ -61,7 +59,7 @@ jobs:
 
           package_dir () {
             local dir="$1"
-            local bindir="target/$dir/$TARGET/release"
+            local bindir="src/$dir/target/$TARGET/release"
 
             # Find executables in the release dir (ignores non-executable libs)
             mapfile -t bins < <(find "$bindir" -maxdepth 1 -type f -executable -printf "%f\n")
