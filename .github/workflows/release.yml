@@ -26,12 +26,28 @@ jobs:
       # Specify what target to build for, we only need linux
       TARGET: x86_64-unknown-linux-musl
 
+      # Force fully static MUSL binaries
+      RUSTFLAGS: -C target-feature=+crt-static
+
+      # Tell cc / build scripts which C toolchain to use for MUSL
+      CC_x86_64_unknown_linux_musl: musl-gcc
+      AR_x86_64_unknown_linux_musl: ar
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Install Rust
+      - name: Install Rust (stable + musl target)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install MUSL tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
 
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
@@ -40,10 +56,6 @@ jobs:
           workspaces: |
             ${{ env.WEBSERVER_PATH }}
             ${{ env.DEPLOY_PATH }}
-
-      - name: Install MUSL toolchain
-        if: contains(env.TARGET, 'musl')
-        run: rustup target add x86_64-unknown-linux-musl
 
       - name: Build webserver
         run: |
