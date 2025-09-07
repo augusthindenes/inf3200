@@ -32,9 +32,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           # Different workspace paths for the two projects
-          paths: |
-            ${{ env.WEBSERVER_PATH }}/target
-            ${{ env.DEPLOY_PATH }}/target
+          workspaces: |
+            src/webserver -> target/webserver
+            src/deploy -> target/deploy
 
       - name: Build webserver
         run: |
@@ -42,7 +42,6 @@ jobs:
             --manifest-path ${{ env.WEBSERVER_PATH }}/Cargo.toml \
             --release \
             --target ${{ env.TARGET }}
-            --locked \
             --target-dir "target/webserver"
 
       - name: Build deploy
@@ -51,7 +50,6 @@ jobs:
             --manifest-path ${{ env.DEPLOY_PATH }}/Cargo.toml \
             --release \
             --target ${{ env.TARGET }} \
-            --locked \
             --target-dir "target/deploy"
 
       - name: Package binaries
