@@ -1,8 +1,9 @@
 use rand::Rng;
+use rand::seq::SliceRandom;
 use serde_json::json;
 use std::env;
 use std::fs;
-use std::os:unix::fs::PermissionsExt;
+use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -14,11 +15,11 @@ fn port_in_use(node: &str, port: u16) -> bool {
         .arg(format!("ss -ltnp | grep :{}", port))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .output()
+        .output();
 
     // If ssh worked and the command found something, the port is in use
     match output {
-        Ok(output) => output.sucsess(),
+        Ok(output) => output.status.success(),
         Err(e) => {
             eprintln!("Failed to execute ssh command: {}", e);
             false // Assume port is not in use if check fails
@@ -27,15 +28,15 @@ fn port_in_use(node: &str, port: u16) -> bool {
 }
 
 // Find a free port on a remote node by randomly selecting ports and checking if they are in use
-fn find_free_port(node: str, max_attempts: u32) -> Option<u16>
+fn find_free_port(node: &str, max_attempts: u32) -> Option<u16>
 {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for _ in 0..max_attempts {
         // Generate a random port
-        let port: u16 =rng.gen_range(49152..=65535);
+        let port: u16 =rng.random_range(49152..=65535);
         
         // Check if the port is in use
-        if !port_in_use(node, port) {
+        if !port_in_use(&node, port) {
             return Some(port); // Return the free port
         }
 
@@ -84,7 +85,7 @@ fn main() {
         .expect("failed to execute available-nodes.sh");
 
     // Convert output into a list of node names
-    let nodes = Vec<String>::from_utf8_lossy(&output.stdout)
+    let nodes: Vec<String> = String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -97,7 +98,7 @@ fn main() {
     }
 
     // Shuffle the nodes to distribute load
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut shuffled_nodes = nodes.clone();
     shuffled_nodes.shuffle(&mut rng);
 
@@ -117,7 +118,7 @@ fn main() {
             }
         };
 
-        let ssh_cmd = format!("bash ~/run-node.sh {}", port);
+        let ssh_cmd = format!("bash ~/run-node.sh {} {}", node, port);
         
         // Start the web server on the selected port
         let status = Command::new("ssh")
