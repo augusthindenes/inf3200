@@ -2,6 +2,7 @@ name: release-linux
 
 # Workflow created using ChatGPT 5 Thinking
 # https://chatgpt.com/share/68bd99e8-9fac-800d-b946-7a522a655bda
+# Some modifications had to be made to make it work
 
 permissions:
   contents: write  # To create releases
@@ -90,5 +91,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          files: dist/*.tar.gz, dist/sha256sums.txt
+          files: 
+            dist/*.tar.gz
+            dist/sha256sums.txt
+            src/run.sh
+            src/run-node.sh
           generate_release_notes: true
