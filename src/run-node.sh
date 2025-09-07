@@ -53,4 +53,7 @@ chmod +x "$BINPATH"
 HOST="$(hostname -f 2>/dev/null || hostname)"
 
 echo "Executing: $BIN \"$HOST\" \"$PORT\""
-exec "$BINPATH" "$HOST" "$PORT"
+exec "nohup $BINPATH" "$HOST" "$PORT" &> /dev/null &
+
+echo "Exiting node ${HOST}"
+exit 0
