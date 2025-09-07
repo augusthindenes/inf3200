@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/latest/download/webserver-v0.0.8-x86_64-unknown-linux-gnu.tar.gz}
+GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/latest/download/webserver-x86_64-unknown-linux-gnu}"
 
 usage() {
     echo "Usage: $0 <port>"
-    echo "Set GITHUB_TARBALL_URL to the .tar.gz for the script to work (env variable or in the script)"
+    echo "Set GITHUB_TARBALL_URL to the .tar.gz for the script to work env variable or in the script"
     exit 1
 }
 
@@ -30,6 +30,7 @@ done
 
 # --- workspace & cleanup ---
 WORKDIR="$(mktemp -d)"
+TARBALL="$WORKDIR/binary.tar.gz"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
@@ -52,8 +53,7 @@ chmod +x "$BINPATH"
 # --- get hostname and run the binary ---
 HOST="$(hostname -f 2>/dev/null || hostname)"
 
-echo "Executing: $BIN \"$HOST\" \"$PORT\""
-exec "nohup $BINPATH" "$HOST" "$PORT" &> /dev/null &
+nohup "$BINPATH" "$HOST" "$PORT" &> /dev/null &
 
 echo "Exiting node ${HOST}"
 exit 0

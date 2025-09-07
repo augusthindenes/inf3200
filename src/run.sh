@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/latest/download/deploy-v0.0.8-x86_64-unknown-linux-gnu.tar.gz}
+GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/latest/download/deploy-x86_64-unknown-linux-gnu}"
 
 usage() {
-    echo "Usage: $0 <number of nodes>"
-    echo "Set GITHUB_TARBALL_URL to the .tar.gz for the script to work (env variable or in the script)"
+    echo "Usage: $0 <nodes>"
+    echo "Set GITHUB_TARBALL_URL to the .tar.gz for the script to work env variable or in the script"
     exit 1
 }
 
-# --- Check that number of nodes argument exists ---
+# --- Check that nodes argument exists ---
 if [ $# -ne 1 ]; then
     usage
 fi
@@ -18,7 +18,7 @@ NODES="$1"
 
 # --- check that nodes is a number between 1 and 100 ---
 if ! [[ "$NODES" =~ ^[0-9]+$ ]] || (( NODES < 1 || NODES > 100 )); then
-    echo "Error: Number of nodes must be a number between 1 and 100" >&2
+    echo "Error: Nodes must be a number between 1 and 100" >&2
     exit 2
 fi
     
@@ -30,6 +30,7 @@ done
 
 # --- workspace & cleanup ---
 WORKDIR="$(mktemp -d)"
+TARBALL="$WORKDIR/binary.tar.gz"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
@@ -49,6 +50,10 @@ tar -xzf "$TARBALL" -C "$WORKDIR"
 BINPATH="$WORKDIR/$BIN"
 chmod +x "$BINPATH"
 
-# --- run the binary ---
-echo "Executing: $BIN \"$NODES\""
-exec "$BINPATH" "$NODES"
+# --- get hostname and run the binary ---
+HOST="$(hostname -f 2>/dev/null || hostname)"
+
+nohup "$BINPATH" "$HOST" "$NODES" &> /dev/null &
+
+echo "Exiting node ${HOST}"
+exit 0
