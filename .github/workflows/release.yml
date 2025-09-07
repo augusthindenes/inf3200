@@ -24,7 +24,7 @@ jobs:
       DEPLOY_PATH: src/deploy
 
       # Specify what target to build for, we only need linux
-      TARGET: x86_64-unknown-linux-gnu
+      TARGET: x86_64-unknown-linux-musl
 
     steps:
       - name: Checkout repository
@@ -40,6 +40,10 @@ jobs:
           workspaces: |
             ${{ env.WEBSERVER_PATH }}
             ${{ env.DEPLOY_PATH }}
+
+      - name: Install MUSL toolchain
+        if: contains(env.TARGET, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build webserver
         run: |
