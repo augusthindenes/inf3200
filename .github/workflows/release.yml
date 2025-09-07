@@ -1,5 +1,8 @@
 name: release-linux
 
+# Workflow created using ChatGPT 5 Thinking
+# https://chatgpt.com/share/68bd99e8-9fac-800d-b946-7a522a655bda
+
 # The workflow should be triggered when a new tag is pushed
 on:
   push:
