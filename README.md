@@ -12,7 +12,7 @@ The deploy script gets a list of available nodes from the cluster, and start x n
 1. Login to the cluster
 2. Download the bash file:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.1.0/run.sh
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.1.2/run.sh
    ```
 3. Make it executable:
    ```bash

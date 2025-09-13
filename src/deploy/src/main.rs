@@ -54,8 +54,14 @@ fn main() {
     // Number of servers to deploy
     let num_servers: usize = args[1].parse().expect("number of servers must be an integer");
 
+    // Get the current working directory
+    let current_dir = env::current_dir().expect("failed to get current directory");
+
+    // Create absolute path to run-node.sh
+    let run_node_path = current_dir.join("run-node.sh");
+    let run_node_path = run_node_path.to_str().unwrap();
+
     // Download run-node.sh if it doesn't exist
-    let run_node_path = "run-node.sh";
     if !std::path::Path::new(run_node_path).exists() {
         println!("Downloading run-node.sh...");
         let status = Command::new("curl")
@@ -63,7 +69,7 @@ fn main() {
             "-L",
             "-o",
             run_node_path,
-            "https://github.com/augusthindenes/inf3200/releases/download/v0.1.1/run-node.sh",
+            "https://github.com/augusthindenes/inf3200/releases/download/v0.1.2/run-node.sh",
         ])
         .status()
         .expect("failed to download run-node.sh");
@@ -118,7 +124,7 @@ fn main() {
             }
         };
 
-        let ssh_cmd = format!("bash ./run-node.sh {} {}", node, port);
+        let ssh_cmd = format!("bash {} {} {}", run_node_path, node, port);
         
         // Start the web server on the selected port
         let status = Command::new("ssh")
