@@ -52,5 +52,14 @@ chmod +x "$BINPATH"
 echo "Starting webserver on port ${NODE}:${PORT} as background process"
 nohup "$BINPATH" "$NODE" "$PORT" &> /dev/null &
 
+# Wait, and then hit the /helloworld endpoint to verify it's running
+sleep 2
+if curl -fsS --no-progress-meter "http://localhost:$PORT/helloworld" &> /dev/null; then
+    echo "Webserver is running and reachable at http://node:${PORT}/helloworld"
+else
+    echo "Error: Webserver is not reachable at http://node:${PORT}/helloworld" >&2
+    exit 5
+fi
+
 echo "Exiting ${NODE}"
 exit 0
