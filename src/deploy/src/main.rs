@@ -110,7 +110,9 @@ fn main() {
 
     let mut servers = Vec::new();
 
-    for i in 0..num_servers {
+    let mut server_started = 0;
+
+    while servers_started < num_servers {
         
         // Select a node in a round-robin fashion
         let node = &shuffled_nodes[i % shuffled_nodes.len()];
@@ -135,8 +137,9 @@ fn main() {
 
         if status.success() {
             servers.push(format!("{}:{}", node, port));
+            servers_started += 1;
         } else {
-            eprintln!("Failed to start server on {}:{}", node, port);
+            eprintln!("Failed to start server on {}:{}\nTrying another node.", node, port);
         }
     }
 
