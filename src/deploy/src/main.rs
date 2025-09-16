@@ -110,7 +110,7 @@ fn main() {
 
     let mut servers = Vec::new();
 
-    let mut server_started = 0;
+    let mut servers_started = 0;
 
     while servers_started < num_servers {
         
