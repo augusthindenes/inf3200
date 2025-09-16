@@ -69,7 +69,7 @@ fn main() {
             "-L",
             "-o",
             run_node_path,
-            "https://github.com/augusthindenes/inf3200/releases/download/v0.1.2/run-node.sh",
+            "https://github.com/augusthindenes/inf3200/releases/latest/download/run-node.sh",
         ])
         .status()
         .expect("failed to download run-node.sh");
