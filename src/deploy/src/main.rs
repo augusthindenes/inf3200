@@ -111,11 +111,14 @@ fn main() {
     let mut servers = Vec::new();
 
     let mut servers_started = 0;
+    let mut counter = 0;
 
     while servers_started < num_servers {
         
         // Select a node in a round-robin fashion
-        let node = &shuffled_nodes[i % shuffled_nodes.len()];
+        let node = &shuffled_nodes[counter % shuffled_nodes.len()];
+
+        counter += 1;
 
         // Find a free port on the selected node
         let port = match find_free_port(node, 20) {
