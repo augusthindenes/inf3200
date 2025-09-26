@@ -69,7 +69,7 @@ fn main() {
             "-L",
             "-o",
             run_node_path,
-            "https://github.com/augusthindenes/inf3200/releases/download/v0.2.0/run-node.sh",
+            "https://github.com/augusthindenes/inf3200/releases/latest/download/run-node.sh",
         ])
         .status()
         .expect("failed to download run-node.sh");
@@ -146,6 +146,33 @@ fn main() {
         }
     }
 
+    // POST list of nodes to all servers to initialize the DHT
+    let nodes_json = json!({ "nodes": servers }).to_string();
+    for server in &servers {
+        let mut it = server.split(':');
+        let host = it.next().unwrap_or("");
+        let port = it.next().and_then(|p| p.parse::<u16>().ok()).unwrap_or(8080);
+        if host.is_empty() {
+            continue;
+        }
+        let url = format!("http://{}:{}/storage-init", host, port);
+        let status = Command::new("curl")
+            .args([
+                "-X", "POST",
+                "-H", "Content-Type: application/json",
+                "-d", &nodes_json,
+                &url,
+            ])
+            .status()
+            .expect("failed to execute curl command");
+
+        if !status.success() {
+            eprintln!("Failed to initialize DHT on {}:{}", host, port);
+        }
+    }
+
+    println!("Initialized DHT on {} nodes.", servers.len());
+    println!("Nodes:");
     // Output the list of servers in JSON format
     println!("'{}'", json!(servers).to_string());
 
