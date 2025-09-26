@@ -1,5 +1,10 @@
-use actix_web::{App, HttpServer, HttpResponse, Responder, get, web};
+// Declare our modules
+mod chord_handler;
+mod storage_handler;
+
+use actix_web::{App, HttpServer, HttpResponse, Responder, get, put, web};
 use std::env::args;
+use crate::storage_handler::StorageHandler;
 
 #[derive(Clone)]
 struct HostConfig {
@@ -38,6 +43,21 @@ async fn helloworld(config: web::Data<HostConfig>) -> impl Responder {
     HttpResponse::Ok().body(format!("{}:{}", config.hostname, config.port))
 }
 
+#[get("/storage/{key}")]
+async fn get_storage(key: web::Path<String>, storage: web::Data<StorageHandler>) -> impl Responder {
+    match storage.get(&key) {
+        Some(value) => HttpResponse::Ok().body(value),
+        None => HttpResponse::NotFound().body("Key not found"),
+    }
+}
+
+// Takes the key from the path and the value from the request body as UTF-8 string
+#[put("/storage/{key}")]
+async fn put_storage(key: web::Path<String>, value: String, storage: web::Data<StorageHandler>) -> impl Responder {
+    storage.put(key.into_inner(), value);
+    HttpResponse::Ok().body("Value stored")
+}
+
 // Main function to start the Actix web server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -45,11 +65,17 @@ async fn main() -> std::io::Result<()> {
     let config = get_config();
     let server_config = config.clone(); // Clone for use in the server closure
 
+    // Initialize the storage handler
+    let _storage_handler = StorageHandler::new();
+
     // Start the HTTP server
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(server_config.clone()))
+            .app_data(web::Data::new(_storage_handler.clone()))
             .service(helloworld)
+            .service(get_storage)
+            .service(put_storage)
     })
     .bind((config.hostname.clone(), config.port))? // Bind to the specified hostname and port
     .run()
