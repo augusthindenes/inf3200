@@ -51,6 +51,12 @@ async fn get_storage(key: web::Path<String>, storage: web::Data<StorageHandler>)
     }
 }
 
+#[get("/network")]
+async fn get_network() -> impl Responder {
+    // TODO: Return list of known nodes (finger table)
+    HttpResponse::Ok().body("Network info not implemented")
+}
+
 // Takes the key from the path and the value from the request body as UTF-8 string
 #[put("/storage/{key}")]
 async fn put_storage(key: web::Path<String>, value: String, storage: web::Data<StorageHandler>) -> impl Responder {
