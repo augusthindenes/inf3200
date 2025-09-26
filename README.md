@@ -27,6 +27,11 @@ The deploy script gets a list of available nodes from the cluster, and start x n
    ```bash
    python3 testscript.py [output from run.sh]
    ```
+   
+   If needed, download testscript:
+   ```bash
+   wget https://raw.githubusercontent.com/augusthindenes/inf3200/main/precode/testscript.py
+   ```
 6. Stop all servers and exit the cluster:
    ```bash
    /share/ifi/cleanup.sh
