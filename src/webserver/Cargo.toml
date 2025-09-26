@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 actix-web = "4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = {version = "1.0.227", features = ["derive"]}
+sha1 = "0.10.6"
