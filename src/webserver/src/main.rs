@@ -57,8 +57,8 @@ fn get_config() -> HostConfig {
 // Define a handler for the /helloworld route
 #[get("/helloworld")]
 // The handler uses the HostConfig to respond with the hostname and port it is running on
-async fn helloworld(config: web::Data<HostConfig>) -> impl Responder {
-    HttpResponse::Ok().body(format!("{}:{}", config.hostname, config.port))
+async fn helloworld(state: web::Data<AppState>) -> impl Responder {
+    HttpResponse::Ok().body(format!("{}:{}", state.host_config.hostname, state.host_config.port))
 }
 
 #[get("/storage/{key}")]
