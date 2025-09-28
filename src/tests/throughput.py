@@ -128,7 +128,7 @@ def reconfigure_nodes(nodes, m):
     
 def test_throughput(node_list):
     node_counts = [1, 2, 4, 8, 16, 32]
-    m_values = [0, 1, 2, 4, 6, 8]
+    m_values = [0, 1, 2, 4, 8]
     pairs_per_test = 1000
     repetitions = 3
 

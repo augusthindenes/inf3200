@@ -12,7 +12,7 @@ The deploy script gets a list of available nodes from the cluster, and start x n
 1. Login to the cluster
 2. Download the bash file:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.1.2/run.sh
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/run.sh
    ```
 3. Make it executable:
    ```bash
@@ -32,7 +32,25 @@ The deploy script gets a list of available nodes from the cluster, and start x n
    ```bash
    wget https://raw.githubusercontent.com/augusthindenes/inf3200/main/precode/testscript.py
    ```
-6. Stop all servers and exit the cluster:
+6. Run chord tester
+   ```bash
+   python3 chord_tester.py [output from run.sh (plaintext format, not JSON)]
+   ```
+
+   If needed, download chord_tester:
+   ```bash
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/chord_tester.py
+   ```
+7. Run Throughput tester
+   ```bash
+   python3 throughput.py [output from run.sh (plaintext format, not JSON)]
+   ```
+
+   If needed, download throughput tester:
+   ```bash
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/throughput.py
+   ```
+8. Stop all servers and exit the cluster:
    ```bash
    /share/ifi/cleanup.sh
    ```
