@@ -39,7 +39,7 @@ The deploy script gets a list of available nodes from the cluster, and start x n
 
    If needed, download chord_tester:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/chord_tester.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/chord-tester.py
    ```
 7. Run Throughput tester
    ```bash
