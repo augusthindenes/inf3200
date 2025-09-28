@@ -1,9 +1,12 @@
 // Declare our modules
 mod chord_handler;
 mod storage_handler;
+mod activity;
 
 use crate::chord_handler::NodeAddr;
 use crate::storage_handler::StorageHandler;
+use crate::activity::ActivityTimer;
+use actix_web::dev::Service;
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, get, post, put, web};
 use serde::Deserialize;
 use std::env::args;
@@ -22,6 +25,7 @@ struct AppState {
     initialized: AtomicBool,
     host_config: HostConfig,
     all_nodes: RwLock<Option<Vec<NodeAddr>>>,
+    activity: ActivityTimer,
 }
 
 type SharedChordHolder = Arc<RwLock<Option<chord_handler::ChordHandler>>>;
@@ -247,6 +251,7 @@ async fn main() -> std::io::Result<()> {
     let config = get_config();
     let storage_handler = StorageHandler::new();
     let chord_handler: SharedChordHolder = Arc::new(RwLock::new(None));
+    let activity = ActivityTimer::new(15); // 15 minutes idle limit
 
     let state = web::Data::new(AppState {
         storage: RwLock::new(storage_handler),
@@ -254,11 +259,36 @@ async fn main() -> std::io::Result<()> {
         initialized: AtomicBool::new(false),
         host_config: config.clone(),
         all_nodes: RwLock::new(None),
+        activity: activity.clone(),
+    });
+
+    // Background idle monitor
+    actix_rt::spawn({
+        let activity = activity.clone();
+        async move {
+            loop {
+                actix_rt::time::sleep(std::time::Duration::from_secs(60)).await;
+                if activity.is_idle() {
+                    println!("No activity for 15 minutes, shutting down.");
+                    actix_rt::System::current().stop();
+                    break;
+                }
+            }
+        }
     });
 
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            .wrap_fn({
+                let st = state.clone();
+                move |req, srv| {
+                    // Touch activity timer on each request
+                    st.activity.touch();
+                    let fut = srv.call(req);
+                    async move { fut.await }
+                }
+            })
             // All routes are present from start, but DHT operations return 503 if not initialized
             .service(helloworld)
             .service(get_storage)
