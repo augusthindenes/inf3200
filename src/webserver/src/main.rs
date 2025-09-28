@@ -17,10 +17,11 @@ struct HostConfig {
 }
 
 struct AppState {
-    storage: StorageHandler,
+    storage: RwLock<StorageHandler>,
     chord: SharedChordHolder,
     initialized: AtomicBool,
     host_config: HostConfig,
+    all_nodes: RwLock<Option<Vec<NodeAddr>>>,
 }
 
 type SharedChordHolder = Arc<RwLock<Option<chord_handler::ChordHandler>>>;
@@ -28,6 +29,12 @@ type SharedChordHolder = Arc<RwLock<Option<chord_handler::ChordHandler>>>;
 #[derive(Deserialize)]
 struct InitReq {
     nodes: Vec<String>, // List of known nodes in "host:port" format
+}
+
+#[derive(Deserialize)]
+struct ReconfigReq {
+    max_nodes: Option<usize>, // Optional maximum number of nodes to keep
+    finger_table_size: Option<u32>, // Optional finger table size
 }
 
 // Fetch host configuration based on process arguments
@@ -91,7 +98,7 @@ async fn get_storage(
     let chord = chord_guard.as_ref().unwrap();
 
     if chord.responsible_for(&key) {
-        match state.storage.get(&key) {
+        match state.storage.read().unwrap().get(&key) {
             Some(value) => HttpResponse::Ok().body(value),
             None => HttpResponse::NotFound().body("Key not found"),
         }
@@ -132,7 +139,7 @@ async fn put_storage(
             Ok(v) => v.to_string(),
             Err(_) => return HttpResponse::BadRequest().body("Value must be valid UTF-8"),
         };
-        state.storage.put(key, value);
+        state.storage.write().unwrap().put(key, value);
         HttpResponse::Ok().body("Value stored")
     } else {
         match chord_handler::forward_put(chord, &key, body, hops).await {
@@ -190,15 +197,47 @@ async fn post_storage_init(state: web::Data<AppState>, body: web::Json<InitReq>)
     }
 
     // Build chord handler
-    let chord_handler = chord_handler::init_chord(self_addr, nodes, None, None);
+    let chord_handler = chord_handler::init_chord(self_addr, nodes.clone(), None, None);
     {
         let mut chord_guard = state.chord.write().unwrap();
         *chord_guard = Some(chord_handler);
     }
 
     state.initialized.store(true, Ordering::Relaxed);
+    
+    *state.all_nodes.write().unwrap() = Some(nodes);
 
     HttpResponse::Ok().body("Node initialized")
+}
+
+#[post("/reconfigure")]
+async fn post_reconfigure(state: web::Data<AppState>, body: web::Json<ReconfigReq>) -> impl Responder {
+    if !state.initialized.load(Ordering::Relaxed) {
+        return HttpResponse::ServiceUnavailable().body("Distributed Hashtable not initialized");
+    }
+
+    let mut chord_guard = state.chord.write().unwrap();
+    let chord = chord_guard.as_mut().unwrap();
+
+    // Rerun initialization with new parameters if provided
+    let all_nodes = state.all_nodes.read().unwrap();
+    let nodes = all_nodes.as_ref().unwrap().clone();
+    let self_addr = NodeAddr {
+        host: state.host_config.hostname.clone(),
+        port: state.host_config.port,
+    };
+    let new_chord = chord_handler::init_chord(
+        self_addr,
+        nodes,
+        body.finger_table_size,
+        body.max_nodes
+    );
+    *chord = new_chord;
+
+    // Reset storage (in a real implementation, we would need to redistribute data)
+    *state.storage.write().unwrap() = StorageHandler::new();
+
+    HttpResponse::Ok().body("Node reconfigured")
 }
 
 // Main function to start the Actix web server
@@ -210,10 +249,11 @@ async fn main() -> std::io::Result<()> {
     let chord_handler: SharedChordHolder = Arc::new(RwLock::new(None));
 
     let state = web::Data::new(AppState {
-        storage: storage_handler,
+        storage: RwLock::new(storage_handler),
         chord: chord_handler,
         initialized: AtomicBool::new(false),
         host_config: config.clone(),
+        all_nodes: RwLock::new(None),
     });
 
     HttpServer::new(move || {
