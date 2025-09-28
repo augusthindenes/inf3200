@@ -112,4 +112,6 @@ jobs:
             dist/sha256sums.txt
             src/run.sh
             src/run-node.sh
+            src/tests/throughput.py
+            precode/chord-tester.py
           generate_release_notes: true
