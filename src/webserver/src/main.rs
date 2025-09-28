@@ -24,7 +24,6 @@ struct AppState {
     chord: SharedChordHolder,
     initialized: AtomicBool,
     host_config: HostConfig,
-    all_nodes: RwLock<Option<Vec<NodeAddr>>>,
     activity: ActivityTimer,
 }
 
@@ -37,6 +36,7 @@ struct InitReq {
 
 #[derive(Deserialize)]
 struct ReconfigReq {
+    nodes: Vec<String>, // List of known nodes in "host:port" format
     max_nodes: Option<usize>, // Optional maximum number of nodes to keep
     finger_table_size: Option<u32>, // Optional finger table size
 }
@@ -197,7 +197,8 @@ async fn post_storage_init(state: web::Data<AppState>, body: web::Json<InitReq>)
         .iter()
         .any(|n| n.host == self_addr.host && n.port == self_addr.port)
     {
-        nodes.push(self_addr.clone());
+        // If not, reject the initialization
+        return HttpResponse::BadRequest().body("Initialization list must include this node");
     }
 
     // Build chord handler
@@ -208,8 +209,6 @@ async fn post_storage_init(state: web::Data<AppState>, body: web::Json<InitReq>)
     }
 
     state.initialized.store(true, Ordering::Relaxed);
-    
-    *state.all_nodes.write().unwrap() = Some(nodes);
 
     HttpResponse::Ok().body("Node initialized")
 }
@@ -220,12 +219,42 @@ async fn post_reconfigure(state: web::Data<AppState>, body: web::Json<ReconfigRe
         return HttpResponse::ServiceUnavailable().body("Distributed Hashtable not initialized");
     }
 
+    // Check if our node is in the new list if provided
+    // Parse nodes
+    let mut nodes: Vec<NodeAddr> = Vec::new();
+    for node in &body.nodes {
+        let mut it = node.split(':');
+        let host = it.next().unwrap_or("");
+        let port = it
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(8080);
+        if host.is_empty() {
+            continue;
+        }
+        nodes.push(NodeAddr {
+            host: host.to_string(),
+            port,
+        });
+    }
+
+    // Ensure self is in the list
+    let self_addr = NodeAddr {
+        host: state.host_config.hostname.clone(),
+        port: state.host_config.port,
+    };
+    if !nodes
+        .iter()
+        .any(|n| n.host == self_addr.host && n.port == self_addr.port)
+    {
+        // If not, reject the reconfiguration
+        return HttpResponse::BadRequest().body("Reconfiguration list must include this node");
+    }
+
     let mut chord_guard = state.chord.write().unwrap();
     let chord = chord_guard.as_mut().unwrap();
 
     // Rerun initialization with new parameters if provided
-    let all_nodes = state.all_nodes.read().unwrap();
-    let nodes = all_nodes.as_ref().unwrap().clone();
     let self_addr = NodeAddr {
         host: state.host_config.hostname.clone(),
         port: state.host_config.port,
@@ -240,6 +269,8 @@ async fn post_reconfigure(state: web::Data<AppState>, body: web::Json<ReconfigRe
 
     // Reset storage (in a real implementation, we would need to redistribute data)
     *state.storage.write().unwrap() = StorageHandler::new();
+
+    // We have to compile a list of all 
 
     HttpResponse::Ok().body("Node reconfigured")
 }
@@ -258,7 +289,6 @@ async fn main() -> std::io::Result<()> {
         chord: chord_handler,
         initialized: AtomicBool::new(false),
         host_config: config.clone(),
-        all_nodes: RwLock::new(None),
         activity: activity.clone(),
     });
 
