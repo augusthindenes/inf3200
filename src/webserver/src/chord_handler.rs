@@ -65,7 +65,10 @@ impl NetworkConfig {
         if !known_nodes.contains(&pre) {
             known_nodes.push(pre);
         }
-        // Successor is always in finger table[0], so no need to add separately
+        let suc = self.successor.addr.label();
+        if !known_nodes.contains(&suc) {
+            known_nodes.push(suc);
+        }
         known_nodes
     }
 }

@@ -128,7 +128,7 @@ def reconfigure_nodes(nodes, m):
     
 def test_throughput(node_list):
     node_counts = [1, 2, 4, 8, 16, 32]
-    m_values = [1, 2, 4, 6, 8]
+    m_values = [0, 1, 2, 4, 6, 8]
     pairs_per_test = 1000
     repetitions = 3
 
@@ -167,7 +167,22 @@ def test_throughput(node_list):
     plt.title('DHT Throughput vs Number of Nodes')
     plt.legend()
     plt.grid(True)
-    plt.savefig('throughput.png')
+    plt.savefig('throughput.pdf')
+
+    # Make a plot of lookup time aswell
+    plt.clf()
+    for m in m_values:
+        entries = [r for r in results_collector.results if r[1] == m]
+        x = [r[0] for r in entries]
+        y = [r[0]/r[2] for r in entries]  # Average time per operation
+        yerr = [r[3]/(r[2]**2) * r[0] for r in entries]  # Error propagation
+        plt.errorbar(x, y, yerr=yerr, marker='o', capsize=5, label=f'M={m}')
+    plt.xlabel('Number of Nodes')
+    plt.ylabel('Average Time per Operation (sec)')
+    plt.title('DHT Average Time per Operation vs Number of Nodes')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('lookup_time.pdf')
 
 def get_node_list(nodes, count):
     if count > len(nodes):
