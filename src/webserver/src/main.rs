@@ -292,22 +292,8 @@ async fn main() -> std::io::Result<()> {
         activity: activity.clone(),
     });
 
-    // Background idle monitor
-    actix_rt::spawn({
-        let activity = activity.clone();
-        async move {
-            loop {
-                actix_rt::time::sleep(std::time::Duration::from_secs(60)).await;
-                if activity.is_idle() {
-                    println!("No activity for 15 minutes, shutting down.");
-                    actix_rt::System::current().stop();
-                    break;
-                }
-            }
-        }
-    });
-
-    HttpServer::new(move || {
+    // Start HTTP server and obtain a server handle
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .wrap_fn({
@@ -325,8 +311,27 @@ async fn main() -> std::io::Result<()> {
             .service(put_storage)
             .service(get_network)
             .service(post_storage_init)
+            .service(post_reconfigure)
     })
     .bind((config.hostname.as_str(), config.port))?
-    .run()
-    .await
+    .run();
+
+    // Background idle monitor using server handle
+    let srv_handle = server.handle();
+    actix_rt::spawn({
+        let activity = activity.clone();
+        async move {
+            loop {
+                actix_rt::time::sleep(std::time::Duration::from_secs(60)).await;
+                if activity.is_idle() {
+                    println!("No activity for 15 minutes, shutting down.");
+                    srv_handle.stop(true).await;
+                    break;
+                }
+            }
+        }
+    });
+
+    // Await server termination
+    server.await
 }
