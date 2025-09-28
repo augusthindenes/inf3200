@@ -172,8 +172,14 @@ fn main() {
     }
 
     println!("Initialized DHT on {} nodes.", servers.len());
-    println!("Nodes:");
+    println!("Node list (in json format for testscript.py):");
     // Output the list of servers in JSON format
     println!("'{}'", json!(servers).to_string());
-
+    println!("");
+    // Output the list of servers in plain text format
+    println!("Node list (plain text for other test scripts):");
+    for server in &servers {
+        print!("{} ", server);
+    }
+    println!();
 }
