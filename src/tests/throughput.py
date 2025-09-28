@@ -2,13 +2,13 @@
 # 1) The number of nodes in the DHT
 # 2) The size of the finger table (M)
 # We want to see how these parameters affect the throughput of the DHT.
-# Each test will be run 5 times to get an average (with a standard deviation).
+# Each test will be run 3 times to get an average (with a standard deviation).
 # Finally we will plot the results using matplotlib.
 
 # Node counts:
 # 1, 2, 4, 8, 16, 32
 # M values:
-# 0, 2, 4, 8 (1 instead of 0 as it's just the successor anyways)
+# 0, 2, 4, 6, 8 (1 instead of 0 as it's just the successor anyways)
 # Each combination of node count and M value will be tested.
 # Each test will consist of putting and getting 1000 key-value pairs.
 
@@ -127,10 +127,10 @@ def reconfigure_nodes(nodes, m):
                 conn.close()
     
 def test_throughput(node_list):
-    node_counts = [1, 2, 4, 8, 16]
-    m_values = [1, 2, 4]
+    node_counts = [1, 2, 4, 8, 16, 32]
+    m_values = [1, 2, 4, 6, 8]
     pairs_per_test = 1000
-    repetitions = 5
+    repetitions = 3
 
     results_collector = ResultsCollector()
 
