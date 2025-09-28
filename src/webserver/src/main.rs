@@ -190,7 +190,7 @@ async fn post_storage_init(state: web::Data<AppState>, body: web::Json<InitReq>)
     }
 
     // Build chord handler
-    let chord_handler = chord_handler::init_chord(self_addr, nodes);
+    let chord_handler = chord_handler::init_chord(self_addr, nodes, None, None);
     {
         let mut chord_guard = state.chord.write().unwrap();
         *chord_guard = Some(chord_handler);

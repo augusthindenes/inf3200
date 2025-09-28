@@ -3,10 +3,11 @@ use actix_web::web::Bytes;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
-use std::cmp::Ordering;
 use std::sync::Arc;
 
-const M: u32 = 64;
+// The size of the identifier circle (2^M)
+// Meaning we use M-bit identifiers (u64)
+const M: u32 = 64; // 64 bits = 2^64 identifiers
 const HOP_LIMIT: u32 = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,10 +65,7 @@ impl NetworkConfig {
         if !known_nodes.contains(&pre) {
             known_nodes.push(pre);
         }
-        let suc = self.successor.addr.label();
-        if !known_nodes.contains(&suc) {
-            known_nodes.push(suc);
-        }
+        // Successor is always in finger table[0], so no need to add separately
         known_nodes
     }
 }
@@ -85,10 +83,11 @@ pub fn hash_key(key: &str) -> u64 {
     let mut hasher = Sha1::new();
     hasher.update(key.as_bytes());
     let result = hasher.finalize();
-    // Use the first 8 bytes of the SHA-1 hash as u64
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&result[..8]);
-    u64::from_be_bytes(bytes.try_into().unwrap())
+    // Use the first M / 8 bytes of the hash as the identifier
+    let n = M as usize / 8;
+    let mut id_bytes = [0u8; 8];
+    id_bytes[8 - n..].copy_from_slice(&result[..n]);
+    u64::from_be_bytes(id_bytes)
 }
 
 // Check if id is in the (start, end) interval on the identifier circle
@@ -115,19 +114,45 @@ pub fn in_interval_open_closed(id: u64, start: u64, end: u64) -> bool {
 }
 
 // Static initialization of the identifier circle (calculate our node's ID and set up finger table)
-pub fn init_chord(me: NodeAddr, mut all_nodes: Vec<NodeAddr>) -> ChordHandler {
-    // Make sure our own address is included
-    if !all_nodes
-        .iter()
-        .any(|n| n.host == me.host && n.port == me.port)
-    {
+pub fn init_chord(
+    me: NodeAddr, 
+    mut all_nodes: Vec<NodeAddr>,
+    finger_count: Option<u32>,
+    max_nodes: Option<usize>
+) -> ChordHandler {
+    // Optional cap on number of nodes used (purely for testing)
+    if let Some(n) = max_nodes {
+        // Limit to at most n nodes (max 64)
+        all_nodes.truncate(n.min(64));
+    }
+
+    let m = if let Some(f) = finger_count {
+        f as usize
+    } else {
+        // If no finger count is specified, use the default
+        // m = ceil(log2(number_of_nodes))
+        (all_nodes.len() as f32).log2().ceil() as usize
+    };
+
+    // Make sure we include ourselves
+    if !all_nodes.iter().any(|n| n.host == me.host && n.port == me.port) {
+        // Don't exceed max nodes after adding ourselves
+        if let Some(n) = max_nodes {
+            if all_nodes.len() >= n.min(64) {
+                all_nodes.pop();
+            }
+        }
+        // Add ourselves
         all_nodes.push(me.clone());
     }
 
     // Compute IDs for all nodes and create Node structs
     let mut nodes: Vec<Node> = all_nodes.into_iter().map(|addr| Node::new(addr)).collect();
+    
     // Sort nodes clockwise by ID
     nodes.sort_by(|a, b| a.id.cmp(&b.id));
+    // In case of duplicate IDs (very unlikely), remove duplicates
+    nodes.dedup_by(|a, b| a.id == b.id); // Remove duplicates by ID (keep first)
 
     // Find our own node in the sorted list
     let me_id = hash_key(&me.label()); // calculate our own ID
@@ -141,28 +166,19 @@ pub fn init_chord(me: NodeAddr, mut all_nodes: Vec<NodeAddr>) -> ChordHandler {
     let successor = nodes[(me_index + 1) % nodes.len()].clone();
     let predecessor = nodes[(me_index + nodes.len() - 1) % nodes.len()].clone();
 
+    let start_i = M - m as u32; // Start finger entries from 2^(M-m)
+
     // Build finger table
-    let mut finger_table = Vec::new();
-    for i in 0..M {
-        let start = me_id.wrapping_add(1u64 << i);
-        // Find first node >= start
-        let finger_node = match nodes.binary_search_by(|n| {
-            if n.id < start {
-                Ordering::Less
-            } else if n.id > start {
-                Ordering::Greater
-            } else {
-                Ordering::Equal
-            }
-        }) {
-            Ok(idx) => nodes[idx].clone(),
-            Err(idx) => nodes[idx % nodes.len()].clone(), // wrap around
+    let mut finger_table = Vec::with_capacity(m);
+    for i in start_i..M {
+        let start = me.id.wrapping_add(1u64 << i);
+        let finger_node = match nodes.binary_search_by_key(&start, |n| n.id) {
+            Ok(idx) => nodes[idx].clone(), // Exact match found
+            Err(idx) => nodes[idx % nodes.len()].clone(), // Closest successor
         };
-        finger_table.push(FingerEntry {
-            start,
-            node: finger_node,
-        });
+        finger_table.push(FingerEntry { start, node: finger_node });
     }
+    
 
     // Create the network configuration
     let network = NetworkConfig {
