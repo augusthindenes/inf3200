@@ -28,13 +28,12 @@ fn port_in_use(node: &str, port: u16) -> bool {
 }
 
 // Find a free port on a remote node by randomly selecting ports and checking if they are in use
-fn find_free_port(node: &str, max_attempts: u32) -> Option<u16>
-{
+fn find_free_port(node: &str, max_attempts: u32) -> Option<u16> {
     let mut rng = rand::rng();
     for _ in 0..max_attempts {
         // Generate a random port
-        let port: u16 =rng.random_range(49152..=65535);
-        
+        let port: u16 = rng.random_range(49152..=65535);
+
         // Check if the port is in use
         if !port_in_use(&node, port) {
             return Some(port); // Return the free port
@@ -46,13 +45,14 @@ fn find_free_port(node: &str, max_attempts: u32) -> Option<u16>
     None // Return None if no free port is found after max_attempts
 }
 
-
 fn main() {
     // Read number of servers from command line arguments
     let args: Vec<String> = env::args().collect();
 
     // Number of servers to deploy
-    let num_servers: usize = args[1].parse().expect("number of servers must be an integer");
+    let num_servers: usize = args[1]
+        .parse()
+        .expect("number of servers must be an integer");
 
     // Get the current working directory
     let current_dir = env::current_dir().expect("failed to get current directory");
@@ -66,13 +66,13 @@ fn main() {
         println!("Downloading run-node.sh...");
         let status = Command::new("curl")
             .args([
-            "-L",
-            "-o",
-            run_node_path,
-            "https://github.com/augusthindenes/inf3200/releases/latest/download/run-node.sh",
-        ])
-        .status()
-        .expect("failed to download run-node.sh");
+                "-L",
+                "-o",
+                run_node_path,
+                "https://github.com/augusthindenes/inf3200/releases/latest/download/run-node.sh",
+            ])
+            .status()
+            .expect("failed to download run-node.sh");
 
         if !status.success() {
             eprintln!("Failed to download run-node.sh");
@@ -114,7 +114,6 @@ fn main() {
     let mut counter = 0;
 
     while servers_started < num_servers {
-        
         // Select a node in a round-robin fashion
         let node = &shuffled_nodes[counter % shuffled_nodes.len()];
 
@@ -130,7 +129,7 @@ fn main() {
         };
 
         let ssh_cmd = format!("bash {} {} {}", run_node_path, node, port);
-        
+
         // Start the web server on the selected port
         let status = Command::new("ssh")
             .arg(node)
@@ -142,7 +141,10 @@ fn main() {
             servers.push(format!("{}:{}", node, port));
             servers_started += 1;
         } else {
-            eprintln!("Failed to start server on {}:{}\nTrying another node.", node, port);
+            eprintln!(
+                "Failed to start server on {}:{}\nTrying another node.",
+                node, port
+            );
         }
     }
 
@@ -151,16 +153,22 @@ fn main() {
     for server in &servers {
         let mut it = server.split(':');
         let host = it.next().unwrap_or("");
-        let port = it.next().and_then(|p| p.parse::<u16>().ok()).unwrap_or(8080);
+        let port = it
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(8080);
         if host.is_empty() {
             continue;
         }
         let url = format!("http://{}:{}/storage-init", host, port);
         let status = Command::new("curl")
             .args([
-                "-X", "POST",
-                "-H", "Content-Type: application/json",
-                "-d", &nodes_json,
+                "-X",
+                "POST",
+                "-H",
+                "Content-Type: application/json",
+                "-d",
+                &nodes_json,
                 &url,
             ])
             .status()
