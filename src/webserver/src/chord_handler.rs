@@ -50,7 +50,26 @@ pub struct NetworkConfig {
     pub predecessor: Node,
     pub successor: Node,
     pub finger_table: Vec<FingerEntry>,
-    pub known_nodes: Vec<Node>, // For initialization only
+}
+
+impl NetworkConfig {
+    // for network endpoint
+    pub fn get_known_nodes(&self) -> Vec<String> {
+        // Known nodes include all nodes in the finger table, predecessor, and successor
+        let mut known_nodes = Vec::new();
+        for entry in &self.finger_table {
+            known_nodes.push(entry.node.addr.label());
+        }
+        let pre = self.predecessor.addr.label();
+        if !known_nodes.contains(&pre) {
+            known_nodes.push(pre);
+        }
+        let suc = self.successor.addr.label();
+        if !known_nodes.contains(&suc) {
+            known_nodes.push(suc);
+        }
+        known_nodes
+    }
 }
 
 #[derive(Clone)]
@@ -138,7 +157,6 @@ pub fn init_chord(me: NodeAddr, mut all_nodes: Vec<NodeAddr>) -> ChordHandler {
         predecessor: predecessor,
         successor: successor,
         finger_table,
-        known_nodes: nodes,
     };
 
     // Return the ChordHandler with initialized network and HTTP client

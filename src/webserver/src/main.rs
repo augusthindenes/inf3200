@@ -30,7 +30,7 @@ struct InitReq {
     nodes: Vec<String>, // List of known nodes in "host:port" format
 }
 
-// Fetch host configuration based on process arguments or default values
+// Fetch host configuration based on process arguments
 fn get_config() -> HostConfig {
     // Get the command line arguments
     let args: Vec<String> = args().collect();
@@ -63,7 +63,6 @@ async fn helloworld(state: web::Data<AppState>) -> impl Responder {
 
 #[get("/storage/{key}")]
 async fn get_storage(req: HttpRequest, key: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
-    println!("GET /storage/{}", key);
     if !state.initialized.load(Ordering::Relaxed) {
         return HttpResponse::ServiceUnavailable().body("Distributed Hashtable not initialized");
     }
@@ -79,13 +78,11 @@ async fn get_storage(req: HttpRequest, key: web::Path<String>, state: web::Data<
     let chord = chord_guard.as_ref().unwrap();
 
     if chord.responsible_for(&key) {
-        println!("This node is responsible for key {}", key);
         match state.storage.get(&key) {
             Some(value) => HttpResponse::Ok().body(value),
             None => HttpResponse::NotFound().body("Key not found"),
         }
     } else {
-        println!("Forwarding request for key {} to another node", key);
         match chord_handler::forward_get(chord, &key, hops).await {
             Ok(response) => response,
             Err(_) => HttpResponse::BadGateway().body("Error forwarding request"),
@@ -96,7 +93,6 @@ async fn get_storage(req: HttpRequest, key: web::Path<String>, state: web::Data<
 // Takes the key from the path and the value from the request body as UTF-8 string
 #[put("/storage/{key}")]
 async fn put_storage(req: HttpRequest, key: web::Path<String>, body: web::Bytes, state: web::Data<AppState>) -> impl Responder {
-    println!("PUT /storage/{} with body of length {}", key, body.len());
     if !state.initialized.load(Ordering::Relaxed) {
         return HttpResponse::ServiceUnavailable().body("Distributed Hashtable not initialized");
     }
@@ -112,7 +108,6 @@ async fn put_storage(req: HttpRequest, key: web::Path<String>, body: web::Bytes,
     let chord = chord_guard.as_ref().unwrap();
 
     if chord.responsible_for(&key) {
-        println!("This node is responsible for key {}", key);
         let value = match std::str::from_utf8(&body) {
             Ok(v) => v.to_string(),
             Err(_) => return HttpResponse::BadRequest().body("Value must be valid UTF-8"),
@@ -120,7 +115,6 @@ async fn put_storage(req: HttpRequest, key: web::Path<String>, body: web::Bytes,
         state.storage.put(key, value);
         HttpResponse::Ok().body("Value stored")
     } else {
-        println!("Forwarding request for key {} to another node", key);
         match chord_handler::forward_put(chord, &key, body, hops).await {
             Ok(response) => response,
             Err(_) => HttpResponse::BadGateway().body("Error forwarding request"),
@@ -135,8 +129,8 @@ async fn get_network(state: web::Data<AppState>) -> impl Responder {
     }
     let chord_guard = state.chord.read().unwrap();
     let chord = chord_guard.as_ref().unwrap();
-    let network_info = chord.get_network_info();
-    HttpResponse::Ok().json(network_info)
+    let known_nodes = chord.get_network_info().get_known_nodes();
+    HttpResponse::Ok().json(known_nodes)
 }
 
 #[post("/storage-init")]
