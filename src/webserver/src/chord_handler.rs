@@ -75,7 +75,7 @@ impl NetworkConfig {
 
 #[derive(Clone)]
 pub struct ChordHandler {
-    network: Arc<NetworkConfig>,
+    network: Arc<RwLock<NetworkConfig>>,
     client: Client,
 }
 
