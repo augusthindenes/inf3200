@@ -2,16 +2,14 @@ use std::sync::atomic::Ordering;
 
 use actix_web::{get, post, put, HttpRequest, HttpResponse, Responder, web};
 
-use crate::{AppState, InitReq, ReconfigReq, chord::{self, NodeAddr}, network::{forward_get, forward_put}, storage::Storage};
+use crate::{AppState, network::{forward_get, forward_put}};
 
 // Define a handler for the /helloworld route
 #[get("/helloworld")]
 // The handler uses the HostConfig to respond with the hostname and port it is running on
 async fn helloworld(state: web::Data<AppState>) -> impl Responder {
-    HttpResponse::Ok().body(format!(
-        "{}:{}",
-        state.host_config.hostname, state.host_config.port
-    ))
+    let chord = state.chord.read().unwrap();
+    HttpResponse::Ok().body(chord.nodes.me.addr.label())
 }
 
 #[get("/storage/{key}")]
@@ -33,8 +31,7 @@ async fn get_storage(
         .unwrap_or(0);
 
     // Aquire read lock on chord handler
-    let chord_guard = state.chord.read().unwrap();
-    let chord = chord_guard.as_ref().unwrap();
+    let chord = state.chord.read().unwrap();
 
     if chord.responsible_for(&key) {
         match state.storage.read().unwrap().get(&key) {
@@ -42,7 +39,7 @@ async fn get_storage(
             None => HttpResponse::NotFound().body("Key not found"),
         }
     } else {
-        match forward_get(chord, &key, hops).await {
+        match forward_get(&chord, &key, hops).await {
             Ok(response) => response,
             Err(_) => HttpResponse::BadGateway().body("Error forwarding request"),
         }
@@ -70,8 +67,7 @@ async fn put_storage(
         .unwrap_or(0);
 
     // Aquire read lock on chord handler
-    let chord_guard = state.chord.read().unwrap();
-    let chord = chord_guard.as_ref().unwrap();
+    let chord = state.chord.read().unwrap();
 
     if chord.responsible_for(&key) {
         let value = match std::str::from_utf8(&body) {
@@ -81,7 +77,7 @@ async fn put_storage(
         state.storage.write().unwrap().put(key, value);
         HttpResponse::Ok().body("Value stored")
     } else {
-        match forward_put(chord, &key, body, hops).await {
+        match forward_put(&chord, &key, body, hops).await {
             Ok(response) => response,
             Err(_) => HttpResponse::BadGateway().body("Error forwarding request"),
         }
@@ -90,13 +86,15 @@ async fn put_storage(
 
 #[get("/node-info")]
 async fn get_node_info(state: web::Data<AppState>) -> impl Responder {
-    // Return not implemented for now
-    HttpResponse::NotImplemented().body("Not implemented yet")
+    // Aquire read lock on chord handler
+    let chord = state.chord.read().unwrap();
+    let nodes = chord.nodes.to_viewmodel();
+    HttpResponse::Ok().json(nodes)
 }
 
 #[post("/join?nprime={HOST:PORT}")]
 async fn post_join(
-    req: web::Json<InitReq>,
+    req: HttpRequest,
     state: web::Data<AppState>,
 ) -> impl Responder {
     // Return not implemented for now

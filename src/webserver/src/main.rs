@@ -11,49 +11,30 @@ mod config;
 // Import everything we need from our modules
 use storage::Storage;
 use activity::ActivityTimer;
+use chord::{NodeAddr, ChordNode};
 
 // Import everything we need from external crates
 use actix_web::dev::Service;
 use actix_web::{App, HttpServer, web};
-use serde::Deserialize;
 use std::env::args;
 use std::sync::atomic::{AtomicBool};
 use std::sync::{Arc, RwLock};
-
-#[derive(Clone)]
-struct HostConfig {
-    hostname: String,
-    port: u16,
-}
 
 struct AppState {
     storage: RwLock<Storage>,
     chord: SharedChordHolder,
     initialized: AtomicBool,
-    host_config: HostConfig,
     activity: ActivityTimer,
 }
 
-type SharedChordHolder = Arc<RwLock<Option<chord::ChordNode>>>;
-
-#[derive(Deserialize)]
-struct InitReq {
-    nodes: Vec<String>, // List of known nodes in "host:port" format
-}
-
-#[derive(Deserialize)]
-struct ReconfigReq {
-    nodes: Vec<String>, // List of known nodes in "host:port" format
-    max_nodes: Option<usize>, // Optional maximum number of nodes to keep
-    finger_table_size: Option<u32>, // Optional finger table size
-}
+type SharedChordHolder = Arc<RwLock<ChordNode>>;
 
 // Fetch host configuration based on process arguments
-fn get_config() -> HostConfig {
+fn get_config() -> NodeAddr {
     // Get the command line arguments
     let args: Vec<String> = args().collect();
     // Attempt to parse hostname from arguments, exit if not provided
-    let Some(hostname) = args.get(1).cloned() else {
+    let Some(host) = args.get(1).cloned() else {
         eprintln!("hostname argument is required");
         eprintln!(
             "Usage: {} <hostname> [port]. Example: {} localhost 8080",
@@ -71,9 +52,9 @@ fn get_config() -> HostConfig {
         std::process::exit(1);
     };
     // Log the starting configuration
-    println!("Starting server at {}:{}", hostname, port);
+    println!("Starting server at {}:{}", host, port);
     // Return the configuration
-    HostConfig { hostname, port }
+    NodeAddr { host, port }
 }
 
 // Main function to start the Actix web server
@@ -82,14 +63,13 @@ async fn main() -> std::io::Result<()> {
     // Get the configuration
     let config = get_config();
     let storage = Storage::new();
-    let chord: SharedChordHolder = Arc::new(RwLock::new(None));
+    let chord: SharedChordHolder = Arc::new(RwLock::new(ChordNode::new(config.clone())));
     let activity = ActivityTimer::new(15); // 15 minutes idle limit
 
     let state = web::Data::new(AppState {
         storage: RwLock::new(storage),
         chord: chord,
         initialized: AtomicBool::new(false),
-        host_config: config.clone(),
         activity: activity.clone(),
     });
 
@@ -116,7 +96,7 @@ async fn main() -> std::io::Result<()> {
             .service(api::post_sim_crash)
             .service(api::post_sim_recover)
     })
-    .bind((config.hostname.as_str(), config.port))?
+    .bind((config.host.as_str(), config.port))?
     .run();
 
     // Background idle monitor using server handle

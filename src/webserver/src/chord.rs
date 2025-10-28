@@ -48,8 +48,15 @@ pub struct KnownNodes {
     pub finger_table: Vec<FingerEntry>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct KnownNodesViewmodel {
+    pub node_hash: String,
+    pub successor: String,
+    pub others: Vec<String>,
+}
+
 impl KnownNodes {
-    // for network endpoint
+    // get list of known node addresses as "host:port" strings
     pub fn get_known_nodes(&self) -> Vec<String> {
         // Known nodes include all nodes in the finger table, predecessor, and successor
         let mut known_nodes = Vec::new();
@@ -66,6 +73,24 @@ impl KnownNodes {
         }
         known_nodes
     }
+    // Convert to viewmodel for API response
+    pub fn to_viewmodel(&self) -> KnownNodesViewmodel {
+        // Get addresses of all known nodes except self and successor
+        let mut others: Vec<String> = Vec::new();
+        for entry in &self.finger_table {
+            if entry.node.id != self.successor.id && entry.node.id != self.me.id {
+                others.push(entry.node.addr.label());
+            }
+        }
+        others.push(self.predecessor.addr.label());
+        // We only want distinct addresses
+        others.dedup();
+        KnownNodesViewmodel {
+            node_hash: format!("{:016x}", self.me.id),
+            successor: self.successor.addr.label(),
+            others,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -74,90 +99,33 @@ pub struct ChordNode {
     pub client: Client,
 }
 
-// Static initialization of the identifier circle (calculate our node's ID and set up finger table)
-pub fn init_chord(
-    me: NodeAddr, 
-    mut all_nodes: Vec<NodeAddr>,
-    finger_count: Option<u32>,
-    max_nodes: Option<usize>
-) -> ChordNode {
-    // Optional cap on number of nodes used (purely for testing)
-    if let Some(n) = max_nodes {
-        // Limit to at most n nodes (max 64)
-        all_nodes.truncate(n.min(64));
-    }
-
-    let m = if let Some(f) = finger_count {
-        f as usize
-    } else {
-        // If no finger count is specified, use the default
-        // m = ceil(log2(number_of_nodes))
-        (all_nodes.len() as f32).log2().ceil() as usize
-    };
-
-    // Make sure we include ourselves
-    if !all_nodes.iter().any(|n| n.host == me.host && n.port == me.port) {
-        // Don't exceed max nodes after adding ourselves
-        if let Some(n) = max_nodes {
-            if all_nodes.len() >= n.min(64) {
-                all_nodes.pop();
-            }
-        }
-        // Add ourselves
-        all_nodes.push(me.clone());
-    }
-
-    // Compute IDs for all nodes and create Node structs
-    let mut nodes: Vec<Node> = all_nodes.into_iter().map(|addr| Node::new(addr)).collect();
-    
-    // Sort nodes clockwise by ID
-    nodes.sort_by(|a, b| a.id.cmp(&b.id));
-    // In case of duplicate IDs (very unlikely), remove duplicates
-    nodes.dedup_by(|a, b| a.id == b.id); // Remove duplicates by ID (keep first)
-
-    // Find our own node in the sorted list
-    let me_id = hash_key(&me.label()); // calculate our own ID
-    let me_index = nodes
-        .iter()
-        .position(|n| n.id == me_id)
-        .expect("Failed to find own node"); // find our index in the list
-    let me = nodes[me_index].clone(); // get our own Node struct by index
-
-    // Determine predecessor and successor
-    let successor = nodes[(me_index + 1) % nodes.len()].clone();
-    let predecessor = nodes[(me_index + nodes.len() - 1) % nodes.len()].clone();
-
-    let start_i = M - m as u32; // Start finger entries from 2^(M-m)
-
-    // Build finger table
-    let mut finger_table = Vec::with_capacity(m);
-    for i in start_i..M {
-        let start = me.id.wrapping_add(1u64 << i);
-        let finger_node = match nodes.binary_search_by_key(&start, |n| n.id) {
-            Ok(idx) => nodes[idx].clone(), // Exact match found
-            Err(idx) => nodes[idx % nodes.len()].clone(), // Closest successor
-        };
-        finger_table.push(FingerEntry { start, node: finger_node });
-    }
-    
-
-    // Create list of known nodes
-    let known_nodes = KnownNodes {
-        me,
-        predecessor: predecessor,
-        successor: successor,
-        finger_table,
-    };
-
-    // Return the ChordHandler with initialized network and HTTP client
-    ChordNode {
-        nodes: Arc::new(known_nodes),
-        client: Client::default(),
-    }
-}
-
 // Implement routing and ChordNode operations
 impl ChordNode {
+    // Init single node network on startup
+    pub fn new (addr: NodeAddr) -> Self {
+        // Create a Node for ourselves
+        let node = Node::new(addr);
+        // Set predecessor and successor to ourselves
+        let mut known_nodes = KnownNodes {
+            me: node.clone(),
+            predecessor: node.clone(),
+            successor: node.clone(),
+            finger_table: Vec::with_capacity(M as usize),
+        };
+
+        // Fill finger table with self references
+        for i in 0..M {
+            let start = node.id.wrapping_add(1u64 << i);
+            known_nodes.finger_table.push(FingerEntry { start, node: node.clone() });
+        }
+
+        // Return the ChordNode
+        ChordNode {
+            nodes: Arc::new(known_nodes),
+            client: Client::default(),
+        }
+    }
+
     // Check if this node is responsible for the given key
     pub fn responsible_for(&self, key: &str) -> bool {
         in_interval_open_closed(
@@ -176,9 +144,5 @@ impl ChordNode {
         }
         // If none found, return successor (as per Chord protocol)
         self.nodes.successor.clone()
-    }
-
-    pub fn get_known_nodes(&self) -> Vec<String> {
-        self.nodes.get_known_nodes()
     }
 }
