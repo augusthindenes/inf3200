@@ -4,14 +4,14 @@ use std::sync::{Arc, RwLock};
 // A thread-safe storage handler using RwLock for concurrent read/write access.
 // Allows multiple readers or one writer at a time.
 #[derive(Clone)]
-pub struct StorageHandler {
+pub struct Storage {
     storage: Arc<RwLock<HashMap<String, String>>>,
 }
 
-impl StorageHandler {
-    // Create a new StorageHandler with an empty HashMap
+impl Storage {
+    // Create a new Storage with an empty HashMap
     pub fn new() -> Self {
-        StorageHandler {
+        Storage {
             storage: Arc::new(RwLock::new(HashMap::new())),
         }
     }
