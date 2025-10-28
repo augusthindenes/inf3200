@@ -110,9 +110,11 @@ async fn main() -> std::io::Result<()> {
             .service(api::helloworld)
             .service(api::get_storage)
             .service(api::put_storage)
-            .service(api::get_network)
-            .service(api::post_storage_init)
-            .service(api::post_reconfigure)
+            .service(api::get_node_info)
+            .service(api::post_join)
+            .service(api::post_leave)
+            .service(api::post_sim_crash)
+            .service(api::post_sim_recover)
     })
     .bind((config.hostname.as_str(), config.port))?
     .run();
