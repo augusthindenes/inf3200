@@ -1,9 +1,12 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::utils::{hash_key, in_interval_open_closed, in_interval_open_open};
 use crate::config::M;
+
+// Define a custom result type for Chord operations
+type ChordResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeAddr {
@@ -95,7 +98,7 @@ impl KnownNodes {
 
 #[derive(Clone)]
 pub struct ChordNode {
-    pub nodes: Arc<KnownNodes>,
+    pub nodes: Arc<RwLock<KnownNodes>>,
     pub client: Client,
 }
 
@@ -121,28 +124,49 @@ impl ChordNode {
 
         // Return the ChordNode
         ChordNode {
-            nodes: Arc::new(known_nodes),
+            nodes: Arc::new(RwLock::new(known_nodes)),
             client: Client::default(),
         }
     }
 
     // Check if this node is responsible for the given key
     pub fn responsible_for(&self, key: &str) -> bool {
+        let known_nodes = self.nodes.read().unwrap();
+        
         in_interval_open_closed(
             hash_key(key),
-            self.nodes.predecessor.id,
-            self.nodes.me.id,
+            known_nodes.predecessor.id,
+            known_nodes.me.id,
         )
     }
 
     pub fn closest_preceding_node(&self, id: u64) -> Node {
+        let known_nodes = self.nodes.read().unwrap();
+        
         // Search finger table in reverse order for the closest preceding node
-        for finger in self.nodes.finger_table.iter().rev() {
-            if in_interval_open_open(finger.node.id, self.nodes.me.id, id) {
+        for finger in known_nodes.finger_table.iter().rev() {
+            if in_interval_open_open(finger.node.id, known_nodes.me.id, id) {
                 return finger.node.clone();
             }
         }
         // If none found, return successor (as per Chord protocol)
-        self.nodes.successor.clone()
+        known_nodes.successor.clone()
+    }
+
+    // Join a Chord network via a known node (seed node/nprime)
+    pub async fn join(&self, seed: NodeAddr) -> ChordResult<()> {
+
+        // Check if seed node is self
+        let me = {self.nodes.read().unwrap().me.clone()};
+        if seed.label() == me.addr.label() {
+            return Ok(());
+        }
+
+        // 1. Find my successor by asking the seed node
+        // let successor = self.rpc_find_successsor(&seed, me.id).await?;
+
+
+        Ok(())
     }
 }
+
