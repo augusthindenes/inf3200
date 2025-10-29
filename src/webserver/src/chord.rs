@@ -163,10 +163,69 @@ impl ChordNode {
         }
 
         // 1. Find my successor by asking the seed node
-        // let successor = self.rpc_find_successsor(&seed, me.id).await?;
-
+        let successor = self.rpc_find_successor(&seed, me.id).await?;
 
         Ok(())
+    }
+
+    // Gracefully leave the Chord network
+    pub async fn leave(&self) -> ChordResult<()> {
+        // Notify predecessor and successor to update their pointers
+        Ok(())
+    }
+
+    // Fix finger table entries
+    pub async fn fix_fingers(&self) -> ChordResult<()> {
+        // Periodically update finger table entries
+        Ok(())
+    }
+
+
+    // RPC methods to interact with other nodes
+
+    // Find the successor for the current node
+    async fn rpc_get_successor(&self, node: &NodeAddr) -> ChordResult<Node> {
+        let url = format!("{}/internal/successor", node.to_url());
+        let response = self.client.get(&url).send().await?;
+        let successor = response.json::<Node>().await?;
+        Ok(successor)
+    }
+
+    // Find the predecessor for the current node
+    async fn rpc_get_predecessor(&self, node: &NodeAddr) -> ChordResult<Node> {
+        let url = format!("{}/internal/predecessor", node.to_url());
+        let response = self.client.get(&url).send().await?;
+        let predecessor = response.json::<Node>().await?;
+        Ok(predecessor)
+    }
+
+    // Find the successor for a given id
+    async fn rpc_find_successor(&self, seed: &NodeAddr, id: u64) -> ChordResult<Node> {
+        let url = format!("{}/internal/find-successor?id={}", seed.to_url(), id);
+        let response = self.client.get(url).send().await?;
+        let successor = response.json::<Node>().await?;
+        Ok(successor)
+    } 
+
+    // Notify a node that we might be its predecessor
+    async fn rpc_notify(&self, node: &NodeAddr, me: &Node) -> ChordResult <()> {
+        let url = format!("{}/internal/notify", node.to_url());
+        self.client.post(&url).json(me).send().await?;
+        Ok(())
+    }
+
+    // Set the successor of a node
+    async fn rpc_set_successor(&self, node: &NodeAddr, successor: &Node) -> ChordResult<()> {
+        let url = format!("{}/internal/set-successor", node.to_url());
+        self.client.post(&url).json(successor).send().await?;
+        Ok(())
+    }
+
+    // Set the predecessor of a node
+    async fn rpc_set_predecessor(&self, node: &NodeAddr, predecessor: &Node) -> ChordResult<()> {
+        let url = format!("{}/internal/set-predecessor", node.to_url());
+        self.client.post(&url).json(predecessor).send().await?;
+        Ok(())  
     }
 }
 
