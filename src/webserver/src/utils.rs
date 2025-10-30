@@ -35,3 +35,35 @@ pub fn in_interval_open_closed(id: u64, start: u64, end: u64) -> bool {
         true
     }
 }
+
+// Unit tests for utility functions
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_hash_key() {
+        // Test that hash_key produces a u64 within the identifier space
+        let key = "example_key";
+        let id = hash_key(key);
+        if M < 64 {
+            assert!(id < (1u64 << M));
+        }
+        // When M == 64, any u64 value is valid
+    }
+    #[test]
+    fn test_in_interval_open_open() {
+        assert!(in_interval_open_open(5, 3, 7)); // 5 is between 3 and 7
+        assert!(!in_interval_open_open(3, 3, 7)); // 3 is not in (3,7)
+        assert!(!in_interval_open_open(7, 3, 7)); // 7 is not in (3,7)
+        assert!(in_interval_open_open(1, 7, 3)); // Wrap around case
+        assert!(!in_interval_open_open(7, 7, 3)); // 7 is not in (7,3)
+    }
+    #[test]
+    fn test_in_interval_open_closed() {
+        assert!(in_interval_open_closed(5, 3, 7)); // 5 is between 3 and 7
+        assert!(!in_interval_open_closed(3, 3, 7)); // 3 is not in (3,7]
+        assert!(in_interval_open_closed(7, 3, 7)); // 7 is in (3,7]
+        assert!(in_interval_open_closed(1, 7, 3)); // Wrap around case
+        assert!(!in_interval_open_closed(7, 7, 3)); // 7 is not in (7,3]
+    }
+}

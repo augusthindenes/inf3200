@@ -12,6 +12,8 @@ mod config;
 use storage::Storage;
 use activity::ActivityTimer;
 use chord::{NodeAddr, ChordNode};
+use simulate::{CrashState, CrashSimulator};
+use config::IDLE_LIMIT;
 
 // Import everything we need from external crates
 use actix_web::dev::Service;
@@ -25,6 +27,7 @@ struct AppState {
     chord: SharedChordHolder,
     initialized: AtomicBool,
     activity: ActivityTimer,
+    crash_state: Arc<CrashState>,
 }
 
 type SharedChordHolder = Arc<RwLock<ChordNode>>;
@@ -64,19 +67,22 @@ async fn main() -> std::io::Result<()> {
     let config = get_config();
     let storage = Storage::new();
     let chord: SharedChordHolder = Arc::new(RwLock::new(ChordNode::new(config.clone())));
-    let activity = ActivityTimer::new(15); // 15 minutes idle limit
+    let activity = ActivityTimer::new(IDLE_LIMIT); // set idle limit from config
+    let crash_state = Arc::new(CrashState::new());
 
     let state = web::Data::new(AppState {
         storage: RwLock::new(storage),
         chord: chord,
         initialized: AtomicBool::new(false),
         activity: activity.clone(),
+        crash_state: Arc::clone(&crash_state),
     });
 
     // Start HTTP server and obtain a server handle
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            .wrap(CrashSimulator::new(Arc::clone(&crash_state)))
             .wrap_fn({
                 let st = state.clone();
                 move |req, srv| {

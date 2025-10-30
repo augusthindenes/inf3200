@@ -31,3 +31,22 @@ impl Storage {
         storage.insert(key, value);
     }
 }
+
+// Unit tests for Storage
+#[cfg(test)]
+mod tests {
+    use super::Storage;
+    #[test]
+    fn test_storage_put_get() {
+        let storage = Storage::new();
+        storage.put("key1".to_string(), "value1".to_string());
+        let value = storage.get("key1");
+        assert_eq!(value, Some("value1".to_string()));
+    }
+    #[test]
+    fn test_storage_get_nonexistent() {
+        let storage = Storage::new();
+        let value = storage.get("nonexistent");
+        assert_eq!(value, None);
+    }
+}
