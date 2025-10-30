@@ -129,14 +129,14 @@ async fn post_leave(state: web::Data<AppState>) -> impl Responder {
 
 #[post("/sim-crash")]
 async fn post_sim_crash(state: web::Data<AppState>) -> impl Responder {
-    // Return not implemented for now
-    HttpResponse::NotImplemented().body("Not implemented yet")
+    state.crash_state.crash();
+    HttpResponse::Ok().body("Node crashed - all responses disabled")
 }
 
 #[post("/sim-recover")]
 async fn post_sim_recover(state: web::Data<AppState>) -> impl Responder {
-    // Return not implemented for now
-    HttpResponse::NotImplemented().body("Not implemented yet")
+    state.crash_state.recover();
+    HttpResponse::Ok().body("Node recovered - responses enabled")
 }
 
 // --- Internal RPC endpoints ...
