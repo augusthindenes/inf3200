@@ -11,7 +11,7 @@ use crate::utils::{in_interval_open_closed, in_interval_open_open};
 #[get("/helloworld")]
 // The handler uses the HostConfig to respond with the hostname and port it is running on
 async fn helloworld(state: web::Data<AppState>) -> impl Responder {
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
     HttpResponse::Ok().body(chord.nodes.me.addr.label())
 }
 
@@ -34,10 +34,10 @@ async fn get_storage(
         .unwrap_or(0);
 
     // Aquire read lock on chord handler
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
 
     if chord.responsible_for(&key) {
-        match state.storage.read().unwrap().get(&key) {
+        match state.storage.read().await.get(&key) {
             Some(value) => HttpResponse::Ok().body(value),
             None => HttpResponse::NotFound().body("Key not found"),
         }
@@ -70,14 +70,14 @@ async fn put_storage(
         .unwrap_or(0);
 
     // Aquire read lock on chord handler
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
 
     if chord.responsible_for(&key) {
         let value = match std::str::from_utf8(&body) {
             Ok(v) => v.to_string(),
             Err(_) => return HttpResponse::BadRequest().body("Value must be valid UTF-8"),
         };
-        state.storage.write().unwrap().put(key, value);
+        state.storage.write().await.put(key, value);
         HttpResponse::Ok().body("Value stored")
     } else {
         match forward_put(&chord, &key, body, hops).await {
@@ -90,10 +90,19 @@ async fn put_storage(
 #[get("/node-info")]
 async fn get_node_info(state: web::Data<AppState>) -> impl Responder {
     // Aquire read lock on chord handler
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
     // Get current node info
     let node_info = chord.nodes.to_viewmodel();
     HttpResponse::Ok().json(node_info)
+}
+
+#[get("/known-nodes")]
+async fn get_known_nodes(state: web::Data<AppState>) -> impl Responder {
+    // Aquire read lock on chord handler
+    let chord = state.chord.read().await;
+    // Get known nodes info
+    let known_nodes = chord.nodes.get_all_nodes();
+    HttpResponse::Ok().json(known_nodes)
 }
 
 #[post("/join")]
@@ -109,7 +118,7 @@ async fn post_join(
             let host = parts[0].to_string();
             if let Ok(port) = parts[1].parse::<u16>() {
                 let addr = NodeAddr { host, port };
-                let mut chord = state.chord.write().unwrap();
+                let mut chord = state.chord.write().await;
                 match chord.join(addr).await {
                     Ok(_) => HttpResponse::Ok().body("Joined the DHT successfully"),
                     Err(e) => HttpResponse::BadGateway().body(format!("Error joining DHT: {}", e)),
@@ -127,7 +136,7 @@ async fn post_join(
 
 #[post("/leave")]
 async fn post_leave(state: web::Data<AppState>) -> impl Responder {
-    let mut chord = state.chord.write().unwrap();
+    let mut chord = state.chord.write().await;
     match chord.leave().await {
         Ok(_) => HttpResponse::Ok().body("Left the DHT successfully"),
         Err(e) => HttpResponse::BadGateway().body(format!("Error leaving DHT: {}", e)),
@@ -158,14 +167,14 @@ async fn ping_handler() -> impl Responder {
 #[get("/internal/successor")]
 async fn get_successor(state: web::Data<AppState>) -> impl Responder {
     // Aquire read lock on chord handler
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
     HttpResponse::Ok().json(chord.nodes.successor.clone())
 }
 
 // Get current node's predecessor
 #[get("/internal/predecessor")]
 async fn get_predecessor(state: web::Data<AppState>) -> impl Responder {
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
     HttpResponse::Ok().json(chord.nodes.predecessor.clone())
 }
 
@@ -186,7 +195,7 @@ async fn find_successor(
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
-    let chord = state.chord.read().unwrap();
+    let chord = state.chord.read().await;
     let me = chord.nodes.me.clone();
     let successor = chord.nodes.successor.clone();
 
@@ -224,11 +233,22 @@ async fn notify(
     body: web::Json<Node>,
 ) -> impl Responder {
     let n0 = body.into_inner();
-    let mut chord_write = state.chord.write().unwrap();
+    let mut chord_write = state.chord.write().await;
+    let me = chord_write.nodes.me.clone();
     let predecessor = &chord_write.nodes.predecessor;
+    let successor = &chord_write.nodes.successor;
 
-    // Check if predecessor is null (we don't have a predecessor) or n' ∈ (predecessor, n)
-    if predecessor.id == chord_write.nodes.me.id || in_interval_open_open(n0.id, predecessor.id, chord_write.nodes.me.id) {
+    // If we're alone (successor is self), the notifying node becomes our successor too
+    if successor.id == me.id {
+        chord_write.nodes.successor = n0.clone();
+        chord_write.nodes.predecessor = n0.clone();
+        // Update first finger table entry
+        if chord_write.nodes.finger_table.len() > 1 {
+            chord_write.nodes.finger_table[1].node = n0;
+        }
+    } 
+    // Otherwise check if predecessor should be updated
+    else if predecessor.id == me.id || in_interval_open_open(n0.id, predecessor.id, me.id) {
         chord_write.nodes.predecessor = n0;
     }
     HttpResponse::Ok().finish()
@@ -241,7 +261,7 @@ async fn set_successor(
     state: web::Data<AppState>,
     body: web::Json<Node>,
 ) -> impl Responder {
-    let mut chord_write = state.chord.write().unwrap();
+    let mut chord_write = state.chord.write().await;
     chord_write.nodes.successor = body.into_inner();
     HttpResponse::Ok().finish()
 }
@@ -253,7 +273,7 @@ async fn set_predecessor(
     state: web::Data<AppState>,
     body: web::Json<Node>,
 ) -> impl Responder {
-    let mut chord_write = state.chord.write().unwrap();
+    let mut chord_write = state.chord.write().await;
     chord_write.nodes.predecessor = body.into_inner();
     HttpResponse::Ok().finish()
 }

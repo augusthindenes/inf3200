@@ -13,14 +13,15 @@ use storage::Storage;
 use activity::ActivityTimer;
 use chord::{NodeAddr, ChordNode};
 use simulate::{CrashState, CrashSimulator};
-use config::IDLE_LIMIT;
+use config::{IDLE_LIMIT, MAINTENANCE_INTERVAL_MS};
 
 // Import everything we need from external crates
 use actix_web::dev::Service;
 use actix_web::{App, HttpServer, web};
 use std::env::args;
 use std::sync::atomic::{AtomicBool};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 struct AppState {
     storage: RwLock<Storage>,
@@ -70,6 +71,13 @@ async fn main() -> std::io::Result<()> {
     let activity = ActivityTimer::new(IDLE_LIMIT); // set idle limit from config
     let crash_state = Arc::new(CrashState::new());
 
+    // After creating the chord node, start the maintenance tasks
+    ChordNode::maintenance(
+        Arc::clone(&chord),
+        MAINTENANCE_INTERVAL_MS,
+        Arc::clone(&crash_state),
+    );
+
     let state = web::Data::new(AppState {
         storage: RwLock::new(storage),
         chord: chord,
@@ -108,6 +116,7 @@ async fn main() -> std::io::Result<()> {
             .service(api::notify)
             .service(api::set_successor)
             .service(api::set_predecessor)
+            .service(api::get_known_nodes)
     })
     .bind((config.host.as_str(), config.port))?
     .run();
