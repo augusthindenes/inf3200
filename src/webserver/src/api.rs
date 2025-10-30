@@ -2,7 +2,9 @@ use std::sync::atomic::Ordering;
 
 use actix_web::{get, post, put, HttpRequest, HttpResponse, Responder, web};
 
-use crate::{AppState, network::{forward_get, forward_put}};
+use crate::AppState;
+use crate::chord::NodeAddr;
+use crate::network::{forward_get, forward_put};
 
 // Define a handler for the /helloworld route
 #[get("/helloworld")]
@@ -92,13 +94,29 @@ async fn get_node_info(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(nodes)
 }
 
-#[post("/join?nprime={HOST:PORT}")]
+#[post("/join")]
 async fn post_join(
-    req: HttpRequest,
+    query: web::Query<std::collections::HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    // Return not implemented for now
-    HttpResponse::NotImplemented().body("Not implemented yet")
+    // Get nprime parameter from query string
+    if let Some(nprime) = query.get("nprime") {
+        // Create a NodeAddr from the nprime string
+        let parts: Vec<&str> = nprime.split(':').collect();
+        if parts.len() == 2 {
+            let host = parts[0].to_string();
+            if let Ok(port) = parts[1].parse::<u16>() {
+                let addr = NodeAddr { host, port };
+                HttpResponse::NotImplemented().body(format!("Join with nprime: {}", addr.label()))
+            } else {
+                HttpResponse::BadRequest().body("Invalid port number")
+            }
+        } else {
+            HttpResponse::BadRequest().body("Invalid nprime format")
+        }
+    } else {
+        HttpResponse::BadRequest().body("Missing nprime parameter")
+    }
 }
 
 #[post("/leave")]
