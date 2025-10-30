@@ -28,3 +28,6 @@ Cargo.lock
 
 # Environment files (use .env.example as template)
 .env
+
+# README is generated from template
+README.md
