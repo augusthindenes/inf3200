@@ -64,12 +64,29 @@ fn main() {
     // Download run-node.sh if it doesn't exist
     if !std::path::Path::new(run_node_path).exists() {
         println!("Downloading run-node.sh...");
+        
+        // Try to read version from .env file, otherwise use default
+        let version = std::fs::read_to_string(current_dir.parent().unwrap().join(".env"))
+            .ok()
+            .and_then(|content| {
+                content.lines()
+                    .find(|line| line.starts_with("VERSION="))
+                    .and_then(|line| line.split('=').nth(1))
+                    .map(|v| v.trim().to_string())
+            })
+            .unwrap_or_else(|| "v0.2.8".to_string());
+        
+        let download_url = format!(
+            "https://github.com/augusthindenes/inf3200/releases/download/{}/run-node.sh",
+            version
+        );
+        
         let status = Command::new("curl")
             .args([
                 "-L",
                 "-o",
                 run_node_path,
-                "https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/run-node.sh",
+                &download_url,
             ])
             .status()
             .expect("failed to download run-node.sh");

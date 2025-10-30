@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Load version from .env if it exists and GITHUB_TARBALL_URL is not set
+if [ -z "${GITHUB_TARBALL_URL:-}" ] && [ -f "$(dirname "$0")/../.env" ]; then
+    source "$(dirname "$0")/../.env"
+    GITHUB_TARBALL_URL="https://github.com/augusthindenes/inf3200/releases/download/${VERSION}/webserver-x86_64-unknown-linux-musl.tar.gz"
+fi
+
 GITHUB_TARBALL_URL="${GITHUB_TARBALL_URL:-https://github.com/augusthindenes/inf3200/releases/download/v0.2.8/webserver-x86_64-unknown-linux-musl.tar.gz}"
 
 usage() {

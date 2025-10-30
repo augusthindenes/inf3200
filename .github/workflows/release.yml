@@ -38,6 +38,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Inject version into scripts and README
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "Injecting version: $TAG"
+          
+          # Update .env file
+          echo "VERSION=$TAG" > .env
+          
+          # Update scripts with the tag
+          sed -i "s|releases/download/v[0-9]\+\.[0-9]\+\.[0-9]\+/|releases/download/$TAG/|g" src/run.sh
+          sed -i "s|releases/download/v[0-9]\+\.[0-9]\+\.[0-9]\+/|releases/download/$TAG/|g" src/run-node.sh
+          sed -i "s|\"v[0-9]\+\.[0-9]\+\.[0-9]\+\"|\"$TAG\"|g" src/deploy/src/main.rs
+          
+          # Update README with the tag
+          sed -i "s|__VERSION__|$TAG|g" README.md
+          
+          echo "Version injection complete"
+
       - name: Install Rust (stable + musl target)
         uses: dtolnay/rust-toolchain@stable
         with:

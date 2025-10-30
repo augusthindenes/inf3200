@@ -109,7 +109,11 @@ async fn post_join(
             let host = parts[0].to_string();
             if let Ok(port) = parts[1].parse::<u16>() {
                 let addr = NodeAddr { host, port };
-                HttpResponse::NotImplemented().body(format!("Join with nprime: {}", addr.label()))
+                let mut chord = state.chord.write().unwrap();
+                match chord.join(&addr).await {
+                    Ok(_) => HttpResponse::Ok().body("Joined the DHT successfully"),
+                    Err(e) => HttpResponse::BadGateway().body(format!("Error joining DHT: {}", e)),
+                }
             } else {
                 HttpResponse::BadRequest().body("Invalid port number")
             }
@@ -123,8 +127,11 @@ async fn post_join(
 
 #[post("/leave")]
 async fn post_leave(state: web::Data<AppState>) -> impl Responder {
-    // Return not implemented for now
-    HttpResponse::NotImplemented().body("Not implemented yet")
+    let mut chord = state.chord.write().unwrap();
+    match chord.leave().await {
+        Ok(_) => HttpResponse::Ok().body("Left the DHT successfully"),
+        Err(e) => HttpResponse::BadGateway().body(format!("Error leaving DHT: {}", e)),
+    }
 }
 
 #[post("/sim-crash")]
