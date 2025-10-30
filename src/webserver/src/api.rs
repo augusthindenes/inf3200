@@ -110,7 +110,7 @@ async fn post_join(
             if let Ok(port) = parts[1].parse::<u16>() {
                 let addr = NodeAddr { host, port };
                 let mut chord = state.chord.write().unwrap();
-                match chord.join(&addr).await {
+                match chord.join(addr).await {
                     Ok(_) => HttpResponse::Ok().body("Joined the DHT successfully"),
                     Err(e) => HttpResponse::BadGateway().body(format!("Error joining DHT: {}", e)),
                 }
