@@ -3,8 +3,9 @@ use std::sync::atomic::Ordering;
 use actix_web::{get, post, put, HttpRequest, HttpResponse, Responder, web};
 
 use crate::AppState;
-use crate::chord::NodeAddr;
+use crate::chord::{Node, NodeAddr};
 use crate::network::{forward_get, forward_put};
+use crate::utils::{in_interval_open_closed, in_interval_open_open};
 
 // Define a handler for the /helloworld route
 #[get("/helloworld")]
@@ -90,8 +91,9 @@ async fn put_storage(
 async fn get_node_info(state: web::Data<AppState>) -> impl Responder {
     // Aquire read lock on chord handler
     let chord = state.chord.read().unwrap();
-    let nodes = chord.nodes.to_viewmodel();
-    HttpResponse::Ok().json(nodes)
+    // Get current node info
+    let node_info = chord.nodes.to_viewmodel();
+    HttpResponse::Ok().json(node_info)
 }
 
 #[post("/join")]
@@ -135,4 +137,116 @@ async fn post_sim_crash(state: web::Data<AppState>) -> impl Responder {
 async fn post_sim_recover(state: web::Data<AppState>) -> impl Responder {
     // Return not implemented for now
     HttpResponse::NotImplemented().body("Not implemented yet")
+}
+
+// --- Internal RPC endpoints ...
+
+// Ping another node to check if it's alive
+#[get("/internal/ping")]
+async fn ping_handler() -> impl Responder {
+    HttpResponse::Ok().finish()
+}
+
+// Get current node's successor
+#[get("/internal/successor")]
+async fn get_successor(state: web::Data<AppState>) -> impl Responder {
+    // Aquire read lock on chord handler
+    let chord = state.chord.read().unwrap();
+    HttpResponse::Ok().json(chord.nodes.successor.clone())
+}
+
+// Get current node's predecessor
+#[get("/internal/predecessor")]
+async fn get_predecessor(state: web::Data<AppState>) -> impl Responder {
+    let chord = state.chord.read().unwrap();
+    HttpResponse::Ok().json(chord.nodes.predecessor.clone())
+}
+
+// Find the successor for a given ID
+// n.find_successor(id)
+//  if id ∈ (n, successor]
+//      return successor
+//  else
+//      n0 = closest_preceding_node(id)
+//      return n0.find_successor(id)
+#[get("/internal/find-successor")]
+async fn find_successor(
+    query: web::Query<std::collections::HashMap<String, String>>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let id = query
+        .get("id")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let chord = state.chord.read().unwrap();
+    let me = chord.nodes.me.clone();
+    let successor = chord.nodes.successor.clone();
+
+    // Check if id is in (n, successor]
+    if in_interval_open_closed(id, me.id, successor.id) {
+        return HttpResponse::Ok().json(successor);
+    }
+
+    // Otherwise, find closest preceding node and forward the request
+    let n0 = chord.closest_preceding_node(id);
+    if n0.addr.label() == me.addr.label() {
+        let successor = chord.nodes.successor.clone();
+        return HttpResponse::Ok().json(successor); // Prevent infinite loop
+    }
+
+    // Forward the request to n0
+    let url = format!("{}/internal/find-successor?id={}", n0.addr.to_url(), id);        // Construct the URL
+    match chord.client.get(&url).send().await {                                         // Make the GET request
+        Ok(resp) => match resp.json::<Node>().await {                     // Parse the response
+            Ok(node) => HttpResponse::Ok().json(node),                                  // Return the successor node
+            Err(_) => HttpResponse::BadGateway().body("Error parsing successor response"),
+        },
+        Err(_) => HttpResponse::BadGateway().body("Error forwarding find_successor request"),   
+    }
+}
+
+// Notify n' that n might be its predecessor
+// n.notify(n')
+//  if predecessor is null or n' ∈ (predecessor, n)
+//      predecessor = n'
+// Body: Node (the notifying node n')
+#[post("/internal/notify")]
+async fn notify(
+    state: web::Data<AppState>,
+    body: web::Json<Node>,
+) -> impl Responder {
+    let n0 = body.into_inner();
+    let mut chord_write = state.chord.write().unwrap();
+    let predecessor = &chord_write.nodes.predecessor;
+
+    // Check if predecessor is null (we don't have a predecessor) or n' ∈ (predecessor, n)
+    if predecessor.id == chord_write.nodes.me.id || in_interval_open_open(n0.id, predecessor.id, chord_write.nodes.me.id) {
+        chord_write.nodes.predecessor = n0;
+    }
+    HttpResponse::Ok().finish()
+}
+
+// Update the current node's successor
+// Body: Node (the new successor)
+#[post("/internal/set-successor")]
+async fn set_successor(
+    state: web::Data<AppState>,
+    body: web::Json<Node>,
+) -> impl Responder {
+    let mut chord_write = state.chord.write().unwrap();
+    chord_write.nodes.successor = body.into_inner();
+    HttpResponse::Ok().finish()
+}
+
+// Update the current node's predecessor
+// Body: Node (the new predecessor)
+#[post("/internal/set-predecessor")]
+async fn set_predecessor(
+    state: web::Data<AppState>,
+    body: web::Json<Node>,
+) -> impl Responder {
+    let mut chord_write = state.chord.write().unwrap();
+    chord_write.nodes.predecessor = body.into_inner();
+    HttpResponse::Ok().finish()
 }

@@ -95,6 +95,13 @@ async fn main() -> std::io::Result<()> {
             .service(api::post_leave)
             .service(api::post_sim_crash)
             .service(api::post_sim_recover)
+            .service(api::ping_handler)
+            .service(api::get_successor)
+            .service(api::get_predecessor)
+            .service(api::find_successor)
+            .service(api::notify)
+            .service(api::set_successor)
+            .service(api::set_predecessor)
     })
     .bind((config.host.as_str(), config.port))?
     .run();
