@@ -1,6 +1,8 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 
 use crate::utils::{hash_key, in_interval_open_closed, in_interval_open_open};
 use crate::config::M;
@@ -63,7 +65,7 @@ impl KnownNodes {
     pub fn get_known_nodes(&self) -> Vec<String> {
         // Known nodes include all nodes in the finger table, predecessor, and successor
         let mut known_nodes = Vec::new();
-        for entry in &self.finger_table {
+        for entry in self.finger_table.iter().skip(1) { // Skip index 0
             known_nodes.push(entry.node.addr.label());
         }
         let pre = self.predecessor.addr.label();
@@ -80,7 +82,7 @@ impl KnownNodes {
     pub fn to_viewmodel(&self) -> KnownNodesViewmodel {
         // Get addresses of all known nodes except self and successor
         let mut others: Vec<String> = Vec::new();
-        for entry in &self.finger_table {
+        for entry in self.finger_table.iter().skip(1) { // Skip index 0
             if entry.node.id != self.successor.id && entry.node.id != self.me.id {
                 others.push(entry.node.addr.label());
             }
@@ -96,10 +98,20 @@ impl KnownNodes {
     }
 }
 
-#[derive(Clone)]
 pub struct ChordNode {
     pub nodes: Arc<RwLock<KnownNodes>>,
     pub client: Client,
+    fix_next: Arc<AtomicUsize>, // Stores the current next finger index to fix in [1, M]
+}
+
+impl Clone for ChordNode {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: Arc::clone(&self.nodes),
+            client: self.client.clone(),
+            fix_next: Arc::clone(&self.fix_next),
+        }
+    }
 }
 
 // Implement routing and ChordNode operations
@@ -113,12 +125,14 @@ impl ChordNode {
             me: node.clone(),
             predecessor: node.clone(),
             successor: node.clone(),
-            finger_table: Vec::with_capacity(M as usize),
+            finger_table: Vec::with_capacity(M as usize + 1),
         };
-
+        // Push first finger entry - index 0 (not used)
+        known_nodes.finger_table.push(FingerEntry { start: node.id, node: node.clone() });
+        
         // Fill finger table with self references
-        for i in 0..M {
-            let start = node.id.wrapping_add(1u64 << i);
+        for i in 1..=M {
+            let start = node.id.wrapping_add(1u64 << (i - 1));
             known_nodes.finger_table.push(FingerEntry { start, node: node.clone() });
         }
 
@@ -126,6 +140,7 @@ impl ChordNode {
         ChordNode {
             nodes: Arc::new(RwLock::new(known_nodes)),
             client: Client::default(),
+            fix_next: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -144,7 +159,7 @@ impl ChordNode {
         let known_nodes = self.nodes.read().unwrap();
         
         // Search finger table in reverse order for the closest preceding node
-        for finger in known_nodes.finger_table.iter().rev() {
+        for finger in known_nodes.finger_table.iter().skip(1).rev() {
             if in_interval_open_open(finger.node.id, known_nodes.me.id, id) {
                 return finger.node.clone();
             }
@@ -153,7 +168,7 @@ impl ChordNode {
         known_nodes.successor.clone()
     }
 
-    // Join a Chord network via a known node (seed node/nprime)
+    // Join a Chord network via a known node (seed node)
     pub async fn join(&self, seed: NodeAddr) -> ChordResult<()> {
 
         // Check if seed node is self
@@ -162,9 +177,17 @@ impl ChordNode {
             return Ok(());
         }
 
-        // 1. Find my successor by asking the seed node
+        // Successor := n'.find_successor(me.id)
         let successor = self.rpc_find_successor(&seed, me.id).await?;
 
+        // Predecessor := nil/me
+        // Update our known nodes
+        {
+            let mut known_nodes = self.nodes.write().unwrap();
+            known_nodes.successor = successor;
+            known_nodes.predecessor = me.clone(); // Temporarily set to self
+        }
+        
         Ok(())
     }
 
@@ -174,14 +197,80 @@ impl ChordNode {
         Ok(())
     }
 
-    // Fix finger table entries
-    pub async fn fix_fingers(&self) -> ChordResult<()> {
-        // Periodically update finger table entries
+
+    // --- Periodic maintenance tasks ---
+
+    // Stabilize verifies n's immediate successor and tells the successor about n
+    // n. stabilize()
+    pub async fn stabilize(&self) -> ChordResult<()> {
+        
+        // Get current node and successor
+        let (me, successor) = {
+            let known_nodes = self.nodes.read().unwrap();
+            (known_nodes.me.clone(), known_nodes.successor.clone()) 
+        };
+
+        // x = successor.predecessor
+        let x = self.rpc_get_predecessor(&successor.addr).await?;
+
+        // if x ∈ (n, successor) then successor = x
+        if in_interval_open_open(x.id, me.id, successor.id) {
+            let mut known_nodes = self.nodes.write().unwrap();
+            known_nodes.successor = x;
+        }
+
+        // successor.notify(n)
+        let current_successor = { // Capture current successor
+            let known_nodes = self.nodes.read().unwrap();
+            known_nodes.successor.clone()
+        };
+        self.rpc_notify(&current_successor.addr, &me).await?;
+
         Ok(())
     }
 
+    // Fix finger table entries. Next stores the index of the next finger to fix.
+    // n. fix_fingers()
+    pub async fn fix_fingers(&self, seed: Option<&NodeAddr>) -> ChordResult<()> {
+        let m = M as usize;
+        
+        // next := next + 1
+        
+        
+        
+        
+        Ok(())
+    }
 
-    // RPC methods to interact with other nodes
+    // Check if predecessor is alive
+    // n. check_predecessor()
+    pub async fn check_predecessor(&self) -> ChordResult<()> {
+        // Get current node and predecessor
+        let (me, predecessor) = {
+            let known_nodes = self.nodes.read().unwrap();
+            (known_nodes.me.clone(), known_nodes.predecessor.clone())   
+        };
+        // If predecessor is self, nothing to check
+        if predecessor.id == me.id {
+            return Ok(());
+        }
+        // if predecessor.ping() fails then predecessor = nil
+        let alive = self.rpc_ping(&predecessor.addr).await;
+        if !alive {
+            let mut known_nodes = self.nodes.write().unwrap();
+            known_nodes.predecessor = me; // Set to self (nil)
+        }
+
+        Ok(())
+    }
+
+    // --- RPC methods to interact with other nodes ---
+
+    // Ping another node to check if it's alive
+    async fn rpc_ping(&self, node: &NodeAddr) -> bool {
+        let url = format!("{}/internal/ping", node.to_url());
+        self.client.get(url).send().await.is_ok()
+    }
 
     // Find the successor for the current node
     async fn rpc_get_successor(&self, node: &NodeAddr) -> ChordResult<Node> {
@@ -199,7 +288,7 @@ impl ChordNode {
         Ok(predecessor)
     }
 
-    // Find the successor for a given id
+    // Find the successor for a given node ID
     async fn rpc_find_successor(&self, seed: &NodeAddr, id: u64) -> ChordResult<Node> {
         let url = format!("{}/internal/find-successor?id={}", seed.to_url(), id);
         let response = self.client.get(url).send().await?;

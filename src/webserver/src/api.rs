@@ -126,6 +126,12 @@ async fn post_sim_recover(state: web::Data<AppState>) -> impl Responder {
 
 // --- Internal RPC endpoints ...
 
+// Ping another node to check if it's alive
+#[get("/internal/ping")]
+async fn ping_handler() -> impl Responder {
+    HttpResponse::Ok().finish()
+}
+
 // Get current node's successor
 #[get("/internal/successor")]
 async fn get_successor(state: web::Data<ChordAppState>) -> impl Responder {
