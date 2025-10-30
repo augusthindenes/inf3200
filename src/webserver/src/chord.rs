@@ -1,6 +1,8 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::utils::{hash_key, in_interval_open_closed, in_interval_open_open};
 use crate::config::M;
@@ -99,15 +101,16 @@ impl KnownNodes {
 pub struct ChordNode {
     pub nodes: KnownNodes,
     pub client: Client,
-    fix_next: usize, // Stores the current next finger index to fix in [1, M]
+    fix_next: AtomicUsize, // Stores the current next finger index to fix in [1, M]
 }
 
+// Manual clone implementation for ChordNode
 impl Clone for ChordNode {
     fn clone(&self) -> Self {
         Self {
             nodes: self.nodes.clone(),
             client: self.client.clone(),
-            fix_next: self.fix_next.clone(),
+            fix_next: AtomicUsize::new(self.fix_next.load(Ordering::Relaxed)),
         }
     }
 }
@@ -130,7 +133,7 @@ impl ChordNode {
         
         // Fill finger table with self references
         for i in 1..=M {
-            let start = node.id.wrapping_add(1u64 << (i - 1));
+            let start = node.id.wrapping_add(1u64 << ((i - 1) as u32));
             known_nodes.finger_table.push(FingerEntry { start, node: node.clone() });
         }
 
@@ -138,7 +141,7 @@ impl ChordNode {
         ChordNode {
             nodes: known_nodes,
             client: Client::default(),
-            fix_next: 0,
+            fix_next: AtomicUsize::new(0),
         }
     }
 
@@ -163,7 +166,7 @@ impl ChordNode {
     }
 
     // Join a Chord network via a known node (seed node)
-    pub async fn join(& mut self, seed: NodeAddr) -> ChordResult<()> {
+    pub async fn join(&mut self, seed: NodeAddr) -> ChordResult<()> {
 
         // Check if seed node is self
         if seed.label() == self.nodes.me.addr.label() {
@@ -184,13 +187,47 @@ impl ChordNode {
     }
 
     // Gracefully leave the Chord network
-    pub async fn leave(&self) -> ChordResult<()> {
-        // Notify predecessor and successor to update their pointers
+    pub async fn leave(&mut self) -> ChordResult<()> {
+        // If predecessor or successor is self, nothing to do (single node network)
+        if self.nodes.predecessor.id == self.nodes.me.id || self.nodes.successor.id == self.nodes.me.id {
+            return Ok(());
+        }
+
+        // Notify predecessor and successor to update their pointers, link pred <-> succ
+        self.rpc_set_successor(&self.nodes.predecessor.addr, &self.nodes.successor).await?;
+        self.rpc_set_predecessor(&self.nodes.successor.addr, &self.nodes.predecessor).await?;
+
+        // Reset to single node network
+        self.nodes.predecessor = self.nodes.me.clone();
+        self.nodes.successor = self.nodes.me.clone();
+        
+        // Reset finger table entries to self
+        let me_id = self.nodes.me.id;
+        let me_node = self.nodes.me.clone();
+
+        for i in 1..=M {
+            let start = me_id.wrapping_add(1u64 << ((i - 1) as u32));
+            self.nodes.finger_table.push(FingerEntry { start, node: me_node.clone()});
+        }
+
         Ok(())
+    
     }
 
-
     // --- Periodic maintenance tasks ---
+    // Run the maintenance tasks periodically
+    pub fn maintenance(&self, period_ms: u64) {
+        let mut chord_clone = self.clone();
+        tokio::spawn(async move {
+            loop {
+                // stabilize -> fix_fingers -> check_predecessor
+                let _ = chord_clone.stabilize().await;
+                let _ = chord_clone.fix_fingers(None).await;
+                let _ = chord_clone.check_predecessor().await;
+                sleep(Duration::from_millis(period_ms)).await;
+            }
+        });
+    }
 
     // Stabilize verifies n's immediate successor and tells the successor about n
     // n. stabilize()
@@ -220,20 +257,35 @@ impl ChordNode {
 
     // Fix finger table entries. Next stores the index of the next finger to fix.
     // n. fix_fingers()
-    pub async fn fix_fingers(&self, seed: Option<&NodeAddr>) -> ChordResult<()> {
+    pub async fn fix_fingers(&mut self, seed_hint: Option<&NodeAddr>) -> ChordResult<()> {
         let m = M as usize;
         
-        // next := next + 1
+        // next := next + 1 ; if next > m then next := 1
+        let mut next = self.fix_next.load(Ordering::Relaxed) + 1;
+        if next > m {
+            next = 1;
+        }
+        self.fix_next.store(next, Ordering::Relaxed);
+
+        // Current node info
+        let me_id = self.nodes.me.id;
+        let default_seed = self.nodes.successor.addr.clone();
+        let seed = seed_hint.cloned().unwrap_or(default_seed);       
         
-        
-        
+        // finger[next] := find_successor(n + 2^(next-1))
+        let start = me_id.wrapping_add(1u64 << ((next - 1) as u32));
+        let finger_node = self.rpc_find_successor(&seed, start).await?;
+
+        // Update finger table
+        self.nodes.finger_table[next].start = start;
+        self.nodes.finger_table[next].node = finger_node;
         
         Ok(())
     }
 
     // Check if predecessor is alive
     // n. check_predecessor()
-    pub async fn check_predecessor(& mut self) -> ChordResult<()> {
+    pub async fn check_predecessor(&mut self) -> ChordResult<()> {
         // Get current node and predecessor
         let (me, predecessor) = {
             (self.nodes.me.clone(), self.nodes.predecessor.clone())
