@@ -21,7 +21,7 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
 1. Login to the cluster
 2. Download the bash file:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.11/run.sh
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.12/run.sh
    ```
 3. Make it executable:
    ```bash
@@ -48,7 +48,7 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
 
    If needed, download chord_tester:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.11/chord-tester.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.12/chord-tester.py
    ```
 7. Run Throughput tester
    ```bash
@@ -57,7 +57,7 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
 
    If needed, download throughput tester:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.11/throughput.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.12/throughput.py
    ```
 8. Stop all servers and exit the cluster:
    ```bash
@@ -68,8 +68,8 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
 
 1. Download run.sh and throughput.py
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.11/run.sh
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.11/throughput.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.12/run.sh
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.12/throughput.py
    ```
 2. Set execution permissions for the run script
    ```bash
