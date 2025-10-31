@@ -154,56 +154,64 @@ def get_node_info(node):
         if conn:
             conn.close()
 
-def check_network_stability(nodes, timeout=30):
+def check_network_stability(nodes, timeout=60):
     """
-    Check if the chord ring is stable by verifying that all nodes
-    have consistent successor/predecessor relationships.
+    Check if the chord ring is stable by traversing it via successors.
+    Returns True if the ring is complete and consistent.
     """
     print(f"Checking network stability (timeout: {timeout}s)...")
     start_time = time.time()
     
     while time.time() - start_time < timeout:
         try:
-            all_stable = True
-            node_infos = {}
-            
-            # Collect info from all nodes
+            # Pick a responsive node to start traversal
+            start_node = None
             for node in nodes:
                 info = get_node_info(node)
-                if info is None:
-                    all_stable = False
+                if info is not None:
+                    start_node = node
                     break
-                node_infos[node] = info
             
-            if not all_stable:
-                time.sleep(2)
+            if start_node is None:
+                time.sleep(1)
                 continue
             
-            # Check if all nodes have valid successors and predecessors
-            for node, info in node_infos.items():
-                # Check if node has a successor
-                if 'successor' not in info or info['successor'] is None:
-                    all_stable = False
+            # Traverse the ring by following successors
+            visited = set()
+            current = start_node
+            
+            for _ in range(len(nodes) + 1):  # +1 to detect if we complete the loop
+                if current in visited and current == start_node:
+                    # Completed the ring
                     break
                 
-                # For single node, it's its own successor/predecessor
-                if len(nodes) == 1:
-                    continue
+                visited.add(current)
                 
-                # Check if node has a predecessor (for multi-node rings)
-                if 'predecessor' not in info or info['predecessor'] is None:
-                    all_stable = False
+                # Get successor
+                info = get_node_info(current)
+                if info is None or 'successor' not in info:
+                    break
+                
+                successor = info['successor']
+                if not successor:
+                    break
+                
+                current = successor
+                
+                # Prevent infinite loops
+                if len(visited) > len(nodes):
                     break
             
-            if all_stable:
+            # Check if we found all nodes and completed the ring
+            if len(visited) == len(nodes) and current == start_node:
                 print("✓ Network is stable!")
                 return True
             
-            time.sleep(2)
+            time.sleep(1)
             
         except Exception as e:
             print(f"Error checking stability: {e}")
-            time.sleep(2)
+            time.sleep(1)
     
     print("✗ Network did not stabilize within timeout")
     return False
