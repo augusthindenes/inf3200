@@ -34,7 +34,7 @@ The throughput test script checks that our chord network is still able to mainta
 1. Login to the cluster
 2. Download the bash file:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.14/run.sh
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/run.sh
    ```
 3. Make it executable:
    ```bash
@@ -52,7 +52,7 @@ The throughput test script checks that our chord network is still able to mainta
    
    If needed, download health_check:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.14/health_check.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/health_check.py
    ```
 6. Run chord benchmark
    ```bash
@@ -61,7 +61,7 @@ The throughput test script checks that our chord network is still able to mainta
 
    If needed, download chord_tester:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.14/chord_benchmark.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/chord_benchmark.py
    ```
 7. Run Throughput tester
    ```bash
@@ -70,7 +70,7 @@ The throughput test script checks that our chord network is still able to mainta
 
    If needed, download throughput tester:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.14/throughput.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/throughput.py
    ```
 8. Stop all servers and exit the cluster:
    ```bash
@@ -81,8 +81,8 @@ The throughput test script checks that our chord network is still able to mainta
 
 1. Download run.sh and throughput.py
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.14/run.sh
-   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.14/chord_benchmark.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/run.sh
+   wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/chord_benchmark.py
    ```
 2. Set execution permissions for the run script
    ```bash
