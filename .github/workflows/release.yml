@@ -148,5 +148,6 @@ jobs:
             src/run.sh
             src/run-node.sh
             src/tests/throughput.py
-            precode/chord-tester.py
+            src/tests/health_check.py
+            src/tests/chord_benchmark.py
           generate_release_notes: true

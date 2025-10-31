@@ -1,15 +1,5 @@
-# We want to test the throughput of our Chord DHT. There are two interesting parameters:
-# 1) The number of nodes in the DHT
-# 2) The size of the finger table (M)
-# We want to see how these parameters affect the throughput of the DHT.
+# We want to test the throughput of our Chord DHT with 32 nodes.
 # Each test will be run 3 times to get an average (with a standard deviation).
-# Finally we will plot the results using matplotlib.
-
-# Node counts:
-# 1, 2, 4, 8, 16, 32
-# M values:
-# 0, 2, 4, 6, 8 (1 instead of 0 as it's just the successor anyways)
-# Each combination of node count and M value will be tested.
 # Each test will consist of putting and getting 1000 key-value pairs.
 
 import http.client
@@ -20,6 +10,7 @@ import time
 import uuid
 import matplotlib.pyplot as plt
 import argparse
+import sys
 
 def arg_parser():
     parser = argparse.ArgumentParser(prog="client", description="DHT client")
@@ -30,9 +21,8 @@ def arg_parser():
     return parser
 
 class ThroughputTester:
-    def __init__(self, nodes, m, pairs):
+    def __init__(self, nodes, pairs):
         self.nodes = nodes
-        self.m = m
         self.pairs = pairs
 
     def run_test(self):
@@ -98,91 +88,228 @@ class ResultsCollector:
     def __init__(self):
         self.results = []
 
-    def add_result(self, nodes, m, throughput, stddev):
-        self.results.append((nodes, m, throughput, stddev))
+    def add_result(self, throughput, stddev):
+        self.results.append((throughput, stddev))
 
     def print_results(self):
-        print("Nodes\tM\tThroughput (ops/sec)\tStdDev")
-        for nodes, m, throughput, stddev in self.results:
-            print(f"{nodes}\t{m}\t{throughput:.2f}\t{stddev:.2f}")
+        print("Run\tThroughput (ops/sec)\tStdDev")
+        for i, (throughput, stddev) in enumerate(self.results, 1):
+            print(f"{i}\t{throughput:.2f}\t{stddev:.2f}")
 
-def reconfigure_nodes(nodes, m):
-    for node in nodes:
-        conn = None
-        try:
-            conn = http.client.HTTPConnection(node)
-            # Body is a JSON with nodes=list of nodes max_nodes=len(nodes) finger_table_size=m
-            body = {
-                "nodes": nodes,
-                "max_nodes": len(nodes),
-                "finger_table_size": m
-            }
-            headers = {"Content-Type": "application/json"}
-            conn.request("POST", f"/reconfigure", json.dumps(body), headers)
-            response = conn.getresponse()
-            if response.status != 200:
-                raise Exception(f"Failed to reconfigure node {node}: {response.status}")
-        finally:
-            if conn:
-                conn.close()
+def reset_node(node):
+    """Reset a node to its initial state"""
+    conn = None
+    try:
+        conn = http.client.HTTPConnection(node, timeout=10)
+        conn.request("POST", "/reset")
+        response = conn.getresponse()
+        response.read()
+        if response.status != 200:
+            raise Exception(f"Failed to reset node {node}: {response.status}")
+    finally:
+        if conn:
+            conn.close()
+
+def recover_node(node):
+    """Simulate recovery of a node"""
+    conn = None
+    try:
+        conn = http.client.HTTPConnection(node, timeout=10)
+        conn.request("POST", "/sim-recover")
+        response = conn.getresponse()
+        response.read()
+        if response.status != 200:
+            raise Exception(f"Failed to recover node {node}: {response.status}")
+    finally:
+        if conn:
+            conn.close()
+
+def join_node(node, nprime):
+    """Join a node to the chord ring via nprime"""
+    conn = None
+    try:
+        conn = http.client.HTTPConnection(node, timeout=10)
+        conn.request("POST", f"/join?nprime={nprime}")
+        response = conn.getresponse()
+        response.read()
+        if response.status != 200:
+            raise Exception(f"Failed to join node {node} to {nprime}: {response.status}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_node_info(node):
+    """Get node info from a node"""
+    conn = None
+    try:
+        conn = http.client.HTTPConnection(node, timeout=5)
+        conn.request("GET", "/node-info")
+        response = conn.getresponse()
+        if response.status == 200:
+            data = response.read().decode("utf-8")
+            return json.loads(data)
+        else:
+            return None
+    finally:
+        if conn:
+            conn.close()
+
+def check_network_stability(nodes, timeout=30):
+    """
+    Check if the chord ring is stable by verifying that all nodes
+    have consistent successor/predecessor relationships.
+    """
+    print(f"Checking network stability (timeout: {timeout}s)...")
+    start_time = time.time()
     
+    while time.time() - start_time < timeout:
+        try:
+            all_stable = True
+            node_infos = {}
+            
+            # Collect info from all nodes
+            for node in nodes:
+                info = get_node_info(node)
+                if info is None:
+                    all_stable = False
+                    break
+                node_infos[node] = info
+            
+            if not all_stable:
+                time.sleep(2)
+                continue
+            
+            # Check if all nodes have valid successors and predecessors
+            for node, info in node_infos.items():
+                # Check if node has a successor
+                if 'successor' not in info or info['successor'] is None:
+                    all_stable = False
+                    break
+                
+                # For single node, it's its own successor/predecessor
+                if len(nodes) == 1:
+                    continue
+                
+                # Check if node has a predecessor (for multi-node rings)
+                if 'predecessor' not in info or info['predecessor'] is None:
+                    all_stable = False
+                    break
+            
+            if all_stable:
+                print("✓ Network is stable!")
+                return True
+            
+            time.sleep(2)
+            
+        except Exception as e:
+            print(f"Error checking stability: {e}")
+            time.sleep(2)
+    
+    print("✗ Network did not stabilize within timeout")
+    return False
+
+def setup_chord_ring(nodes):
+    """
+    Reset all nodes, recover them, and join them to form a chord ring.
+    Returns True if successful, False otherwise.
+    """
+    if len(nodes) == 0:
+        return False
+    
+    print(f"\n{'='*60}")
+    print(f"Setting up Chord ring with {len(nodes)} nodes")
+    print(f"{'='*60}\n")
+    
+    # Step 1: Recover and reset all nodes
+    print("Step 1: Recovering and resetting all nodes...")
+    for i, node in enumerate(nodes):
+        try:
+            print(f"  [{i+1}/{len(nodes)}] Recovering {node}...", end=" ")
+            recover_node(node)
+            print("✓", end=" ")
+            print(f"Resetting...", end=" ")
+            reset_node(node)
+            print("✓")
+        except Exception as e:
+            print(f"✗ Error: {e}")
+            return False
+    
+    print("✓ All nodes recovered and reset\n")
+    
+    # Step 2: Join all nodes to form a ring
+    print("Step 2: Joining nodes to form Chord ring...")
+    
+    # First node is already in its own ring
+    print(f"  [1/{len(nodes)}] {nodes[0]} is the initial node ✓")
+    
+    # Join remaining nodes to the ring
+    for i, node in enumerate(nodes[1:], start=2):
+        try:
+            print(f"  [{i}/{len(nodes)}] Joining {node} via {nodes[0]}...", end=" ")
+            join_node(node, nodes[0])
+            print("✓")
+            # Small delay to let stabilization happen
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"✗ Error: {e}")
+            return False
+    
+    print("✓ All nodes joined\n")
+    
+    # Step 3: Wait for network to stabilize
+    print("Step 3: Waiting for network stabilization...")
+    if not check_network_stability(nodes, timeout=60):
+        print("✗ Failed to stabilize network")
+        return False
+    
+    print(f"\n{'='*60}")
+    print("✓ Chord ring setup complete!")
+    print(f"{'='*60}\n")
+    
+    return True
+    
+
 def test_throughput(node_list):
-    node_counts = [1, 2, 4, 8, 16, 32]
-    m_values = [0, 1, 2, 4, 8]
+    node_count = 32
     pairs_per_test = 1000
     repetitions = 3
 
     results_collector = ResultsCollector()
 
-    for nodes in node_counts:
-        for m in m_values:
-            print(f"Testing with {nodes} nodes and M={m}")
-            throughputs = []
-            for _ in range(repetitions):
-                # Assume we have a function to get the list of nodes
-                selected_node_list = get_node_list(nodes=node_list, count=nodes)
-                # Reconfigure nodes to use N nodes and M finger table size
-                reconfigure_nodes(selected_node_list, m)
+    print(f"\n{'='*60}")
+    print(f"Testing with {node_count} nodes")
+    print(f"{'='*60}")
+    throughputs = []
+    
+    for rep in range(repetitions):
+        print(f"\nRepetition {rep+1}/{repetitions}")
+        print("-" * 60)
+        
+        # Select nodes for this test
+        selected_node_list = get_node_list(nodes=node_list, count=node_count)
+        
+        # Setup chord ring: recover, reset, and join
+        if not setup_chord_ring(selected_node_list):
+            print(f"✗ Failed to setup Chord ring for test")
+            sys.exit(1)
 
-                # Generate key-value pairs
-                pairs = PairGenerator.generate_pairs(pairs_per_test)
-                tester = ThroughputTester(selected_node_list, m, pairs)
-                throughput = tester.run_test()
-                throughputs.append(throughput)
-            avg_throughput = sum(throughputs) / len(throughputs)
-            stddev_throughput = (sum((x - avg_throughput) ** 2 for x in throughputs) / len(throughputs)) ** 0.5
-            results_collector.add_result(nodes, m, avg_throughput, stddev_throughput)
+        # Generate key-value pairs
+        print(f"Running throughput test with {pairs_per_test} key-value pairs...")
+        pairs = PairGenerator.generate_pairs(pairs_per_test)
+        tester = ThroughputTester(selected_node_list, pairs)
+        throughput = tester.run_test()
+        throughputs.append(throughput)
+        print(f"✓ Throughput: {throughput:.2f} ops/sec")
+        
+    avg_throughput = sum(throughputs) / len(throughputs)
+    stddev_throughput = (sum((x - avg_throughput) ** 2 for x in throughputs) / len(throughputs)) ** 0.5
+    results_collector.add_result(avg_throughput, stddev_throughput)
+    print(f"\n✓ Average throughput for {node_count} nodes: {avg_throughput:.2f} ± {stddev_throughput:.2f} ops/sec")
 
+    print(f"\n{'='*60}")
+    print("All tests completed!")
+    print(f"{'='*60}\n")
     results_collector.print_results()
-
-    # Use matplotlib to plot results with error bars showing stddev
-    for m in m_values:
-        entries = [r for r in results_collector.results if r[1] == m]
-        x = [r[0] for r in entries]
-        y = [r[2] for r in entries]
-        yerr = [r[3] for r in entries]
-        plt.errorbar(x, y, yerr=yerr, marker='o', capsize=5, label=f'M={m}')
-    plt.xlabel('Number of Nodes')
-    plt.ylabel('Throughput (ops/sec)')
-    plt.title('DHT Throughput vs Number of Nodes')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('throughput.pdf')
-
-    # Make a plot of lookup time aswell
-    plt.clf()
-    for m in m_values:
-        entries = [r for r in results_collector.results if r[1] == m]
-        x = [r[0] for r in entries]
-        y = [r[0]/r[2] for r in entries]  # Average time per operation
-        yerr = [r[3]/(r[2]**2) * r[0] for r in entries]  # Error propagation
-        plt.errorbar(x, y, yerr=yerr, marker='o', capsize=5, label=f'M={m}')
-    plt.xlabel('Number of Nodes')
-    plt.ylabel('Average Time per Operation (sec)')
-    plt.title('DHT Average Time per Operation vs Number of Nodes')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('lookup_time.pdf')
 
 def get_node_list(nodes, count):
     if count > len(nodes):
@@ -193,8 +320,22 @@ def main(args):
     nodes = set(args.nodes)
     nodes = list(nodes)
 
+    if len(nodes) < 32:
+        print(f"✗ Error: Need at least 32 nodes to run the test, but only {len(nodes)} provided.")
+        sys.exit(1)
+
+    print(f"\n{'='*60}")
+    print("CHORD DHT THROUGHPUT BENCHMARK")
+    print(f"{'='*60}")
+    print(f"Total nodes available: {len(nodes)}")
+    print(f"Testing with: 32 nodes")
+    print(f"{'='*60}\n")
+
     test_throughput(nodes)
-    print("Throughput test completed. Results saved to throughput.png")
+    
+    print(f"\n{'='*60}")
+    print("✓ Throughput test completed!")
+    print(f"{'='*60}\n")
 
 if __name__ == "__main__":
     parser = arg_parser()

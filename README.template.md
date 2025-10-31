@@ -7,7 +7,7 @@ It is compiled through GitHub Actions, and is provided in x86_64 Linux binary fo
 ## Webserver (``src/webserver``)
 
 The webserver is built on actix-web, and provides a simple HTTP server that exposes the endpoints necessary for a DHT (distributed hash table) using the Chord Protocol.
-The server uses middleware to track the last activity on this node. After x minutes of inactivty, it automatically shuts down (currently configured to 15 minutes).
+The server uses middleware to track the last activity on this node. After x minutes of inactivty, it automatically shuts down (currently configured to 10 minutes).
 
 ## Deploy (``src/deploy``)
 
@@ -15,7 +15,7 @@ The deploy script gets a list of available nodes from the cluster, and start x n
 
 ## Throughput test (``src/tests/throughput.py``)
 
-The throughput test script runs 3 times per combination of N (nodes) and M (size of finger table). In each test it first reconfigures the DHT (which also wipes all previous data), then it puts 1000 key/value pairs picking a random node for each operation, after all values are put it gets all the values again (still picking a random node for each operation). When getting from the DHT each value is tested for correctness against a local dict, this means that we also test that the Chord Protocol is implemented correctly (we get the correct value no matter which node recives the inital request). As mentioned each combination of the test parameters are tested 3 times, and the average and standard deviation is calculated. This data is then used to create two plots: throughput and lookup time.
+The throughput test script checks that our chord network is still able to 
 
 ## Downloading and running
 1. Login to the cluster
@@ -32,23 +32,23 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
    ./run.sh <number of servers>
    ```
    (Number of servers is limited to 100)
-5. Check that the servers are running:
+5. Check that the servers are running: (Optional but recommended)
    ```bash
-   python3 testscript.py [output from run.sh]
+   python3 health_check.py [output from run.sh (plaintext format, not JSON)]
    ```
    
-   If needed, download testscript:
+   If needed, download health_check:
    ```bash
-   wget https://raw.githubusercontent.com/augusthindenes/inf3200/main/precode/testscript.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/__VERSION__/health_check.py
    ```
-6. Run chord tester
+6. Run chord benchmark
    ```bash
-   python3 chord_tester.py [output from run.sh (plaintext format, not JSON)]
+   python3 chord_benchmark.py [output from run.sh (plaintext format, not JSON)]
    ```
 
    If needed, download chord_tester:
    ```bash
-   wget https://github.com/augusthindenes/inf3200/releases/download/__VERSION__/chord-tester.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/__VERSION__/chord_benchmark.py
    ```
 7. Run Throughput tester
    ```bash
@@ -64,12 +64,12 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
    /share/ifi/cleanup.sh
    ```
 
-## Example: Downloading run.sh, starting a 32 node cluster and running the throughput test.
+## Example: Downloading run.sh, starting a 32 node cluster and running the chord_benchmark test.
 
 1. Download run.sh and throughput.py
    ```bash
    wget https://github.com/augusthindenes/inf3200/releases/download/__VERSION__/run.sh
-   wget https://github.com/augusthindenes/inf3200/releases/download/__VERSION__/throughput.py
+   wget https://github.com/augusthindenes/inf3200/releases/download/__VERSION__/chord_benchmark.py
    ```
 2. Set execution permissions for the run script
    ```bash
@@ -88,11 +88,11 @@ The throughput test script runs 3 times per combination of N (nodes) and M (size
    node1:1234 node2:2345 node3:3456 ... node32:9999
    ```
    Copy the plaintext list of nodes
-5. Start throughput test
+5. Start chord_benchmark test
    ```bash
-   python3 throughput.py node1:1234 node2:2345 node3:3456 ... node32:9999
+   python3 chord_benchmark.py node1:1234 node2:2345 node3:3456 ... node32:9999
    ```
-   When finished, a table of the test results will be printed to console and ``throughput.pdf`` and ``lookup_time.pdf`` have been created in the current directory.
+   Results will be printed to the terminal, and when finished PDF graphs will be written to ...
 6. Cleanup
    ```bash
    /share/ifi/cleanup.sh
