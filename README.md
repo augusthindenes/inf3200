@@ -79,7 +79,7 @@ The throughput test script checks that our chord network is still able to mainta
 
 ## Example: Downloading run.sh, starting a 32 node cluster and running the chord_benchmark test.
 
-1. Download run.sh and throughput.py
+1. Download run.sh and chord_benchmark.py
    ```bash
    wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/run.sh
    wget https://github.com/augusthindenes/inf3200/releases/download/v0.2.15/chord_benchmark.py
