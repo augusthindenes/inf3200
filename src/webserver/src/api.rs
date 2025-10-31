@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use actix_web::{get, post, put, HttpRequest, HttpResponse, Responder, web};
 
 use crate::AppState;
@@ -21,10 +19,6 @@ async fn get_storage(
     key: web::Path<String>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    if !state.initialized.load(Ordering::Relaxed) {
-        return HttpResponse::ServiceUnavailable().body("Distributed Hashtable not initialized");
-    }
-
     // get the key from the path and hop count from headers
     let key = key.into_inner();
     let hops = req
@@ -57,10 +51,6 @@ async fn put_storage(
     body: web::Bytes,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    if !state.initialized.load(Ordering::Relaxed) {
-        return HttpResponse::ServiceUnavailable().body("Distributed Hashtable not initialized");
-    }
-
     // get the key from the path and hop count from headers
     let key = key.into_inner();
     let hops = req

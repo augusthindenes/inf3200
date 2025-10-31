@@ -19,14 +19,12 @@ use config::{IDLE_LIMIT, MAINTENANCE_INTERVAL_MS};
 use actix_web::dev::Service;
 use actix_web::{App, HttpServer, web};
 use std::env::args;
-use std::sync::atomic::{AtomicBool};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 struct AppState {
     storage: RwLock<Storage>,
     chord: SharedChordHolder,
-    initialized: AtomicBool,
     activity: ActivityTimer,
     crash_state: Arc<CrashState>,
 }
@@ -81,7 +79,6 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState {
         storage: RwLock::new(storage),
         chord: chord,
-        initialized: AtomicBool::new(false),
         activity: activity.clone(),
         crash_state: Arc::clone(&crash_state),
     });
