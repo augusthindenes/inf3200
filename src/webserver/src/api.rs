@@ -1,9 +1,12 @@
 use actix_web::{get, post, put, HttpRequest, HttpResponse, Responder, web};
+use std::time::Duration;
 
 use crate::AppState;
 use crate::chord::{Node, NodeAddr};
 use crate::network::{forward_get, forward_put};
 use crate::utils::{in_interval_open_closed, in_interval_open_open};
+use crate::ChordNode;
+use crate::config::HOP_LIMIT;
 
 // Define a handler for the /helloworld route
 #[get("/helloworld")]
@@ -108,9 +111,21 @@ async fn post_join(
             let host = parts[0].to_string();
             if let Ok(port) = parts[1].parse::<u16>() {
                 let addr = NodeAddr { host, port };
-                let mut chord = state.chord.write().await;
-                match chord.join(addr).await {
-                    Ok(_) => HttpResponse::Ok().body("Joined the DHT successfully"),
+                
+                // Prepare join and do RPCs without holding write lock
+                let join_result = {
+                    let chord = state.chord.read().await;
+                    chord.join_prepare(addr).await
+                };
+                
+                // Apply state changes, with write lock
+                match join_result {
+                    Ok(Some((successor, finger_updates))) => {
+                        let mut chord = state.chord.write().await;
+                        chord.join_apply(successor, finger_updates);
+                        HttpResponse::Ok().body("Joined the DHT successfully")
+                    },
+                    Ok(None) => HttpResponse::Ok().body("Already in network"),
                     Err(e) => HttpResponse::BadGateway().body(format!("Error joining DHT: {}", e)),
                 }
             } else {
@@ -126,11 +141,35 @@ async fn post_join(
 
 #[post("/leave")]
 async fn post_leave(state: web::Data<AppState>) -> impl Responder {
-    let mut chord = state.chord.write().await;
-    match chord.leave().await {
-        Ok(_) => HttpResponse::Ok().body("Left the DHT successfully"),
+    // Prepare leave and do RPCs without holding write lock
+    let should_leave = {
+        let chord = state.chord.read().await;
+        chord.leave_prepare().await
+    };
+    
+    // Apply leave if needed, with write lock
+    match should_leave {
+        Ok(true) => {
+            let mut chord = state.chord.write().await;
+            chord.leave_apply();
+            HttpResponse::Ok().body("Left the DHT successfully")
+        },
+        Ok(false) => HttpResponse::Ok().body("Already a single node"),
         Err(e) => HttpResponse::BadGateway().body(format!("Error leaving DHT: {}", e)),
     }
+}
+
+#[post("/reset")]
+async fn post_reset(state: web::Data<AppState>) -> impl Responder {
+    let mut chord = state.chord.write().await;
+    // Create a completely new ChordNode with the same address
+    let addr = chord.nodes.me.addr.clone();
+    *chord = ChordNode::new(addr);
+    drop(chord); // Release lock before clearing storage
+    
+    // Also clear storage
+    state.storage.write().await.clear();
+    HttpResponse::Ok().body("Node reset to initial state")
 }
 
 #[post("/sim-crash")]
@@ -184,31 +223,64 @@ async fn find_successor(
         .get("id")
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
-
-    let chord = state.chord.read().await;
-    let me = chord.nodes.me.clone();
-    let successor = chord.nodes.successor.clone();
-
-    // Check if id is in (n, successor]
-    if in_interval_open_closed(id, me.id, successor.id) {
-        return HttpResponse::Ok().json(successor);
+    
+    // Get hop count to prevent infinite forwarding loops
+    let hops = query
+        .get("hops")
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0);
+    
+    // If we've exceeded hop limit, return successor to break the chain
+    if hops >= HOP_LIMIT {
+        let chord = state.chord.read().await;
+        return HttpResponse::Ok().json(chord.nodes.successor.clone());
     }
 
-    // Otherwise, find closest preceding node and forward the request
-    let n0 = chord.closest_preceding_node(id);
-    if n0.addr.label() == me.addr.label() {
+    // Get node info WITHOUT holding lock during RPC
+    let (me, successor, n0, client) = {
+        let chord = state.chord.read().await;
+        let me = chord.nodes.me.clone();
         let successor = chord.nodes.successor.clone();
+        
+        // Check if id is in (n, successor]
+        if in_interval_open_closed(id, me.id, successor.id) {
+            return HttpResponse::Ok().json(successor);
+        }
+        
+        // Otherwise, find closest preceding node
+        let n0 = chord.closest_preceding_node(id);
+        let client = chord.client.clone();
+        (me, successor, n0, client)
+    };
+    
+    // Now we can do RPC without any lock held
+    if n0.addr.label() == me.addr.label() {
         return HttpResponse::Ok().json(successor); // Prevent infinite loop
     }
 
-    // Forward the request to n0
-    let url = format!("{}/internal/find-successor?id={}", n0.addr.to_url(), id);        // Construct the URL
-    match chord.client.get(&url).send().await {                                         // Make the GET request
-        Ok(resp) => match resp.json::<Node>().await {                     // Parse the response
-            Ok(node) => HttpResponse::Ok().json(node),                                  // Return the successor node
-            Err(_) => HttpResponse::BadGateway().body("Error parsing successor response"),
+    // Forward the request to n0 with incremented hop count
+    let url = format!("{}/internal/find-successor?id={}&hops={}", n0.addr.to_url(), id, hops + 1);
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            // Check if the forwarded node is crashed (503)
+            if resp.status() == 503 {
+                // Forwarded node is crashed, return our successor instead
+                return HttpResponse::Ok().json(successor);
+            }
+            
+            match resp.json::<Node>().await {
+                Ok(node) => HttpResponse::Ok().json(node),
+                Err(_) => {
+                    // JSON decode failed, likely a crashed node returned HTML/text
+                    // Return our successor as fallback
+                    HttpResponse::Ok().json(successor)
+                }
+            }
         },
-        Err(_) => HttpResponse::BadGateway().body("Error forwarding find_successor request"),   
+        Err(_) => {
+            // Network error, return our successor as fallback
+            HttpResponse::Ok().json(successor)
+        }
     }
 }
 
@@ -223,25 +295,37 @@ async fn notify(
     body: web::Json<Node>,
 ) -> impl Responder {
     let n0 = body.into_inner();
-    let mut chord_write = state.chord.write().await;
-    let me = chord_write.nodes.me.clone();
-    let predecessor = &chord_write.nodes.predecessor;
-    let successor = &chord_write.nodes.successor;
+    
+    // Try to acquire write lock with timeout
+    match tokio::time::timeout(
+        Duration::from_millis(200),
+        state.chord.write()
+    ).await {
+        Ok(mut chord_write) => {
+            let me = chord_write.nodes.me.clone();
+            let predecessor = chord_write.nodes.predecessor.clone();
+            let successor = chord_write.nodes.successor.clone();
 
-    // If we're alone (successor is self), the notifying node becomes our successor too
-    if successor.id == me.id {
-        chord_write.nodes.successor = n0.clone();
-        chord_write.nodes.predecessor = n0.clone();
-        // Update first finger table entry
-        if chord_write.nodes.finger_table.len() > 1 {
-            chord_write.nodes.finger_table[1].node = n0;
+            // If we're alone (successor is self), the notifying node becomes our successor too
+            if successor.id == me.id {
+                chord_write.nodes.successor = n0.clone();
+                chord_write.nodes.predecessor = n0.clone();
+                // Update first finger table entry
+                if chord_write.nodes.finger_table.len() > 1 {
+                    chord_write.nodes.finger_table[1].node = n0;
+                }
+            } 
+            // Otherwise check if predecessor should be updated
+            else if predecessor.id == me.id || in_interval_open_open(n0.id, predecessor.id, me.id) {
+                chord_write.nodes.predecessor = n0;
+            }
+            HttpResponse::Ok().finish()
+        },
+        Err(_) => {
+            // Timeout - return success anyway, next stabilize will retry
+            HttpResponse::Ok().finish()
         }
-    } 
-    // Otherwise check if predecessor should be updated
-    else if predecessor.id == me.id || in_interval_open_open(n0.id, predecessor.id, me.id) {
-        chord_write.nodes.predecessor = n0;
     }
-    HttpResponse::Ok().finish()
 }
 
 // Update the current node's successor
@@ -251,9 +335,19 @@ async fn set_successor(
     state: web::Data<AppState>,
     body: web::Json<Node>,
 ) -> impl Responder {
-    let mut chord_write = state.chord.write().await;
-    chord_write.nodes.successor = body.into_inner();
-    HttpResponse::Ok().finish()
+    // Use timeout to prevent deadlock
+    match tokio::time::timeout(
+        Duration::from_millis(200),
+        state.chord.write()
+    ).await {
+        Ok(mut chord_write) => {
+            chord_write.nodes.successor = body.into_inner();
+            HttpResponse::Ok().finish()
+        },
+        Err(_) => {
+            HttpResponse::RequestTimeout().body("Timeout acquiring lock")
+        }
+    }
 }
 
 // Update the current node's predecessor
@@ -263,7 +357,17 @@ async fn set_predecessor(
     state: web::Data<AppState>,
     body: web::Json<Node>,
 ) -> impl Responder {
-    let mut chord_write = state.chord.write().await;
-    chord_write.nodes.predecessor = body.into_inner();
-    HttpResponse::Ok().finish()
+    // Use timeout to prevent deadlock
+    match tokio::time::timeout(
+        Duration::from_millis(200),
+        state.chord.write()
+    ).await {
+        Ok(mut chord_write) => {
+            chord_write.nodes.predecessor = body.into_inner();
+            HttpResponse::Ok().finish()
+        },
+        Err(_) => {
+            HttpResponse::RequestTimeout().body("Timeout acquiring lock")
+        }
+    }
 }

@@ -104,6 +104,7 @@ async fn main() -> std::io::Result<()> {
             .service(api::get_node_info)
             .service(api::post_join)
             .service(api::post_leave)
+            .service(api::post_reset)
             .service(api::post_sim_crash)
             .service(api::post_sim_recover)
             .service(api::ping_handler)

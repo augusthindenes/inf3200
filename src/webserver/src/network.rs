@@ -19,10 +19,6 @@ pub async fn forward_get(
 
     // Hash the key to find its ID
     let key_id = hash_key(key);
-    // Check if this node is responsible for the key
-    if chord.responsible_for(key) {
-        return Ok(HttpResponse::Ok().finish()); // Placeholder: actual value retrieval not implemented here
-    }
     // Find the closest preceding node
     let next_node = chord.closest_preceding_node(key_id);
     // Construct the URL for the next node
@@ -62,10 +58,6 @@ pub async fn forward_put(
 
     // Hash the key to find its ID
     let key_id = hash_key(key);
-    // Check if this node is responsible for the key
-    if chord.responsible_for(key) {
-        return Ok(HttpResponse::Ok().finish()); // Placeholder: actual value storage not implemented here
-    }
     // Find the closest preceding node
     let next_node = chord.closest_preceding_node(key_id);
     // Construct the URL for the next node

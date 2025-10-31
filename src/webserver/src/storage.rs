@@ -30,6 +30,13 @@ impl Storage {
         let mut storage = self.storage.write().unwrap();
         storage.insert(key, value);
     }
+
+    // Clear all key-value pairs from storage
+    pub fn clear(&self) {
+        // Acquire a write lock to safely modify the storage
+        let mut storage = self.storage.write().unwrap();
+        storage.clear();
+    }
 }
 
 // Unit tests for Storage
